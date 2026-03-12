@@ -84,15 +84,29 @@ WHERE i.quantity > 0;
 # Развертывание (Quick Start) \ Запуск контейнера:
 
 # Bash
-## ДЛЯ АКТИВАЦИИ ПРОПИШИ В ТЕРМИНАЛЕ В ПАПКЕ С ФАЙЛОМ
-## ВКЛЮЧИ ДОКЕР
+### ДЛЯ АКТИВАЦИИ ПРОПИШИ В ТЕРМИНАЛЕ В ПАПКЕ С ФАЙЛОМ
+### ВКЛЮЧИ ДОКЕР
 ### docker-compose up -d
 
-### Создание таблиц (Активация кода)
-### Скопируй файл прямо в контейнер:
-### docker cp BD_dead_kolesa_kz.sql car_parts_db:/tmp/setup.sql
+## Создание таблиц (Активация кода)
+## Скопируй файл прямо в контейнер:
+## docker cp BD_dead_kolesa_kz.sql car_parts_db:/tmp/setup.sql
 
 ## Запусти его выполнение внутри:
 ### docker exec -it car_parts_db psql -U myuser -d parts_catalog -f /tmp/setup.sql
-## ДЛЯ ПРОВЕРКИ ЧТО ВСЁ СОЗДАЛОСЬ УСПЕШНО:
-### docker exec -it car_parts_db psql -U myuser -d parts_catalog -c "\dt"
+# ДЛЯ ПРОВЕРКИ ЧТО ВСЁ СОЗДАЛОСЬ УСПЕШНО: docker exec -it car_parts_db psql -U myuser -d parts_catalog -c "\dt"
+
+## Общая команда для входа в БД через терминал:
+### docker exec -it car_parts_db psql -U myuser -d parts_catalog
+
+# ПЕРЕД КАЖДЫМ КОММИТОМ ДЕЛАТЬ ЭТО:
+
+### docker exec -t car_parts_db pg_dump -U myuser parts_catalog > full_backup.sql
+
+# ДЛЯ ЭТОГО
+## Напарник: делает pg_dump в файл full_backup.sql и пушит его в Git.
+## Ты: делаешь git pull. Твой файл full_backup.sql на компьютере обновился.
+## Ты: теперь тебе нужно "накатить" (импортировать) этот файл в свой локальный Docker.
+## Команда для тебя (обновление твоей базы):
+## Bash
+## docker exec -i car_parts_db psql -U myuser -d parts_catalog < full_backup.sql

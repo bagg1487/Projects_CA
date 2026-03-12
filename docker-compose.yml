@@ -27,3 +27,6 @@ volumes:
 #Запусти его выполнение внутри:
 #docker exec -it car_parts_db psql -U myuser -d parts_catalog -f /tmp/setup.sql
 # ДЛЯ ПРОВЕРКИ ЧТО ВСЁ СОЗДАЛОСЬ УСПЕШНО: docker exec -it car_parts_db psql -U myuser -d parts_catalog -c "\dt"
+
+# Общая команда для входа:
+# docker exec -it car_parts_db psql -U myuser -d parts_catalog
