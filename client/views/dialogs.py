@@ -22,7 +22,6 @@ class PartDialog(QDialog):
         self.setMinimumWidth(400)
         layout = QFormLayout(self)
 
-        # Поля ввода
         self.oemEdit = QLineEdit()
         self.nameEdit = QLineEdit()
         self.brandEdit = QLineEdit()
@@ -51,7 +50,6 @@ class PartDialog(QDialog):
         layout.addRow("Адрес:", self.addressEdit)
         layout.addRow("Магазин:", self.storeEdit)
 
-        # Кнопки
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok |
             QDialogButtonBox.StandardButton.Cancel

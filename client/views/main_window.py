@@ -34,13 +34,10 @@ class MainWindow(QMainWindow):
         mainLayout.setSpacing(15)
         mainLayout.setContentsMargins(20, 20, 20, 20)
 
-        # Верхняя панель с фильтрами
         topPanel = self.createFilterPanel()
 
-        # Панель с кнопками действий
         buttonPanel = self.createButtonPanel()
 
-        # Табы с таблицами
         self.tabWidget = QTabWidget(self)
         self.setupCatalogTab()
         self.setupInventoryTab()
@@ -138,21 +135,18 @@ class MainWindow(QMainWindow):
 
     def setupModels(self):
         """Настройка моделей данных для таблиц"""
-        # Модель для каталога
         self.catalogModel = QStandardItemModel(0, 4, self)
         self.catalogModel.setHorizontalHeaderLabels(
             ["ID", "OEM-номер", "Наименование", "Марка/Модель"]
         )
         self.catalogTable.setModel(self.catalogModel)
 
-        # Модель для инвентаря
         self.inventoryModel = QStandardItemModel(0, 6, self)
         self.inventoryModel.setHorizontalHeaderLabels(
             ["Деталь", "OEM", "Марка/Модель", "Цена", "Количество", "Адрес склада"]
         )
         self.inventoryTable.setModel(self.inventoryModel)
 
-        # Скрываем колонку ID
         self.catalogTable.setColumnHidden(0, True)
 
     def connectSignals(self):
