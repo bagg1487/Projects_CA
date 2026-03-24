@@ -273,25 +273,40 @@ def edit_part():
         conn.close()
 
 
-def print_parts(parts):
-    """Вывод списка запчастей"""
+def print_parts(parts, page_size=10):
+    """Вывод записей по 10 штук с запросом на продолжение"""
     if not parts:
         print("Запчасти не найдены")
         return
     
-    print(f"\nНайдено записей: {len(parts)}")
-    print("-" * 100)
+    total_pages = (len(parts) + page_size - 1) // page_size
+    current_page = 1
     
-    for p in parts:
-        print(f"ID: {p['id']}")
-        print(f"  OEM: {p['oem_number']} | Название: {p['part_name']}")
-        print(f"  Авто: {p['brand']} {p['model']} {p['body_code'] or ''} ({p['year_start'] or '?'}-{p['year_end'] or '?'})")
-        print(f"  Магазин: {p['store_name']} | Адрес: {p['address']}")
-        print(f"  Цена: {p['price']} | Кол-во: {p['quantity']} | Состояние: {p['condition']}")
+    while current_page <= total_pages:
+        start_idx = (current_page - 1) * page_size
+        end_idx = min(start_idx + page_size, len(parts))
+        
+        print(f"\nНайдено записей: {len(parts)} (показаны {start_idx + 1}-{end_idx})")
         print("-" * 100)
+        
+        for p in parts[start_idx:end_idx]:
+            print(f"ID: {p['id']}")
+            print(f"  OEM: {p['oem_number']} | Название: {p['part_name']}")
+            print(f"  Авто: {p['brand']} {p['model']} {p['body_code'] or ''} ({p['year_start'] or '?'}-{p['year_end'] or '?'})")
+            print(f"  Магазин: {p['store_name']} | Адрес: {p['address']}")
+            print(f"  Цена: {p['price']} | Кол-во: {p['quantity']} | Состояние: {p['condition']}")
+            print("-" * 100)
+        
+        if current_page < total_pages:
+            choice = input("\nПоказать следующие 10 записей? (y/n): ").strip().lower()
+            if choice == 'y' or choice == 'да':
+                current_page += 1
+            else:
+                break
+        else:
+            break
 
 
-# ==================== МЕНЮ ====================
 
 def menu_view_all():
     """Просмотр всех запчастей"""
@@ -374,7 +389,6 @@ def menu_sort():
         print("Нет данных для сортировки")
         return
     
-    # Определяем функции-ключи для сортировки
     sort_keys = {
         '1': lambda x: float(x['price']) if x['price'] else 0,
         '2': lambda x: x['oem_number'] or '',
@@ -383,11 +397,11 @@ def menu_sort():
     }
     
     if choices == '0':
-        # Сортировка по всем полям последовательно
+    
         for key in ['1', '2', '3', '4']:
             parts = mergesort(parts, sort_keys[key], reverse)
     else:
-        # Сортировка по выбранным полям
+
         for choice in choices.replace(' ', '').split(','):
             if choice in sort_keys:
                 parts = mergesort(parts, sort_keys[choice], reverse)
@@ -397,18 +411,16 @@ def menu_sort():
 
 def menu_bst_search():
     """Поиск через дерево оптимального поиска"""
-    print("\n--- Поиск через дерево (ОПД А2) ---")
+    print("\n--- Поиск через дерево (ДОП А2) ---")
     
     parts = fetch_all_parts()
     if not parts:
         print("Нет данных для построения дерева")
         return
     
-    # Строим дерево
     bst_root = build_optimal_bst(parts)
     print(f"Дерево построено ({len(parts)} записей)")
     
-    # Поиск
     oem_query = input("Введите OEM-номер для поиска: ").strip()
     result = search_in_bst(bst_root, oem_query)
     
@@ -438,7 +450,7 @@ def main():
         print("2) Добавление запчасти")
         print("3) Поиск запчастей")
         print("4) Сортировка (Mergesort)")
-        print("5) Поиск через дерево (ОПД А2)")
+        print("5) Поиск через дерево (ДОП А2)")
         print("6) Удаление запчасти")
         print("7) Редактирование запчасти")
         print("0) Выход")
