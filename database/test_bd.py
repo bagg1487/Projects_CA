@@ -3,8 +3,6 @@ from decimal import Decimal
 from datetime import datetime
 
 
-# ==================== MERGESORT ====================
-
 def mergesort(data, key_func, reverse=False):
     """Сортировка слиянием по заданному ключу"""
     if len(data) <= 1:
@@ -46,8 +44,6 @@ def merge(left, right, key_func, reverse):
     return result
 
 
-# ==================== ДЕРЕВО ОПТИМАЛЬНОГО ПОИСКА (А2) ====================
-
 class TreeNode:
     """Узел дерева оптимального поиска"""
     def __init__(self, oem, record, left=None, right=None):
@@ -65,10 +61,8 @@ def build_optimal_bst(records):
     if not records:
         return None
     
-    # Сортируем записи по OEM для построения сбалансированного дерева
     sorted_records = sorted(records, key=lambda x: x['oem_number'])
     
-    # Строим сбалансированное BST (медиана в корне)
     return build_balanced_bst(sorted_records, 0, len(sorted_records) - 1)
 
 
@@ -116,7 +110,6 @@ def inorder_traversal(node, result=None):
     return result
 
 
-# ==================== РАБОТА С БД ====================
 
 def get_connection():
     """Подключение к БД"""
