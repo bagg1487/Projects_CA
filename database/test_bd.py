@@ -154,17 +154,28 @@ def add_part():
     brand = input("Марка авто: ").strip()
     model = input("Модель авто: ").strip()
     body_code = input("Код кузова (например, RD1): ").strip() or None
-    year_start = input("Год начала выпуска: ").strip()
-    year_end = input("Год окончания выпуска: ").strip()
-    
+    year_start = input("Год начала выпуска: ").strip() or "1845"
+    while not (year_start.isnumeric() and int(year_start) > 1845 and int(year_start) <= datetime.now().year):
+        year_start = input("Некорректный ввод (Целое число больше 1845). Год начала выпуска: ").strip()  or "1845"
+    year_end = input("Год окончания выпуска: ").strip() or str(datetime.now().year)
+    while not (year_end.isnumeric() and int(year_end) >= int(year_start) and int(year_end) <= datetime.now().year):
+        year_end = input("Некорретный ввод (Целое число больше года начала выпуска"
+                         " и меньше либо равно нынешнему году). Год окончания выпуска: ").strip() or str(datetime.now().year)
+
     address = input("Адрес магазина: ").strip()
     store_name = input("Название магазина: ").strip()
     phone = input("Телефон: ").strip() or None
     
-    quantity = input("Количество: ").strip()
-    price = input("Цена: ").strip()
+    quantity = input("Количество: ").strip() or "1"
+    while not (quantity.isnumeric() and int(quantity) >= 1):
+        quantity = input("Некорретный ввод. Количество: ").strip() or "1"
+    price = input("Цена: ").strip() or "0"
+    while not (price.isnumeric() and int(price) >= 0):
+        price = input("Некорретный ввод. Цена: ").strip() or "0"
     condition = input("Состояние (new/used): ").strip().lower()
-    
+    while not (condition.lower() == "new" or condition.lower() == "used"):
+        condition = input("Состояние (new/used): ").strip().lower()
+
     conn = get_connection()
     cur = conn.cursor()
     
