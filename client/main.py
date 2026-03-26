@@ -2,18 +2,24 @@ import sys
 from PyQt6.QtWidgets import *
 from PyQt6.QtCore import *
 from PyQt6.QtGui import *
+from database import Database
 
 class MainWindow(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.isDarkMode = False
-        
+        self.db = Database()
+
         self.setupUI()
         self.setupModels()
         self.applyLightTheme()
-        
-        self.resize(1024, 768)
+        self.connectSignals()
+
+        self.resize(1200, 800)
         self.setWindowTitle("Система складского учета автозапчастей")
+        
+        self.loadFilters()
+        self.refreshInventory()
 
     def setupUI(self):
         centralWidget = QWidget(self)
@@ -44,7 +50,6 @@ class MainWindow(QMainWindow):
 
         self.themeToggleBtn = QPushButton("🌙 Тёмная тема", self)
         self.themeToggleBtn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.themeToggleBtn.clicked.connect(self.toggleTheme)
 
         topPanelLayout.addWidget(self.searchEdit)
         topPanelLayout.addWidget(self.brandFilter)
@@ -60,10 +65,12 @@ class MainWindow(QMainWindow):
         self.editBtn = QPushButton("Редактировать", self)
         self.deleteBtn = QPushButton("Удалить", self)
         self.deleteBtn.setObjectName("deleteBtn")
+        self.refreshBtn = QPushButton("Обновить", self)
 
         buttonLayout.addWidget(self.addBtn)
         buttonLayout.addWidget(self.editBtn)
         buttonLayout.addWidget(self.deleteBtn)
+        buttonLayout.addWidget(self.refreshBtn)
         buttonLayout.addStretch()
 
         # Табы
@@ -95,13 +102,32 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(centralWidget)
 
     def setupModels(self):
-        catalogModel = QStandardItemModel(0, 4, self)
-        catalogModel.setHorizontalHeaderLabels(["OEM-номер", "Наименование", "Марка/Модель", "Фото"])
+        # Каталог: OEM, Наименование, Марка/Модель, Годы, Фото, Ссылка
+        catalogModel = QStandardItemModel(0, 6, self)
+        catalogModel.setHorizontalHeaderLabels([
+            "OEM-номер", "Наименование", "Марка", "Модель", "Годы", "Фото", "Ссылка"
+        ])
         self.catalogTable.setModel(catalogModel)
 
-        inventoryModel = QStandardItemModel(0, 6, self)
-        inventoryModel.setHorizontalHeaderLabels(["Деталь", "OEM", "Марка/Модель", "Цена", "Количество", "Адрес склада"])
+        # Инвентарь: OEM, Деталь, Марка/Модель, Цена, Кол-во, Состояние, Магазин, Адрес, Телефон, Ссылка
+        inventoryModel = QStandardItemModel(0, 10, self)
+        inventoryModel.setHorizontalHeaderLabels([
+            "OEM", "Деталь", "Марка", "Модель", "Цена", "Количество", 
+            "Состояние", "Магазин", "Адрес", "Ссылка"
+        ])
         self.inventoryTable.setModel(inventoryModel)
+
+    def connectSignals(self):
+        self.themeToggleBtn.clicked.connect(self.toggleTheme)
+        self.addBtn.clicked.connect(self.addPart)
+        self.editBtn.clicked.connect(self.editPart)
+        self.deleteBtn.clicked.connect(self.deletePart)
+        self.refreshBtn.clicked.connect(self.refreshInventory)
+        self.searchEdit.textChanged.connect(self.applyFilters)
+        self.brandFilter.currentTextChanged.connect(self.applyFilters)
+        self.conditionFilter.currentTextChanged.connect(self.applyFilters)
+        self.locationFilter.currentTextChanged.connect(self.applyFilters)
+        self.inStockCheckbox.stateChanged.connect(self.applyFilters)
 
     def toggleTheme(self):
         self.isDarkMode = not self.isDarkMode
@@ -186,6 +212,224 @@ class MainWindow(QMainWindow):
         }
         """
         self.setStyleSheet(styleSheet)
+
+    def loadFilters(self):
+        """Загрузить фильтры из БД"""
+        brands = self.db.get_all_brands()
+        for brand in brands:
+            self.brandFilter.addItem(brand)
+
+        locations = self.db.get_all_locations()
+        for store_name, address in locations:
+            display = f"{store_name} ({address})" if address else store_name
+            self.locationFilter.addItem(display)
+
+    def refreshInventory(self):
+        """Обновить данные в таблицах"""
+        self.applyFilters()
+
+    def applyFilters(self):
+        """Применить фильтры и обновить таблицы"""
+        search = self.searchEdit.text()
+        brand = self.brandFilter.currentText()
+        if brand == "Все марки":
+            brand = ""
+        condition = self.conditionFilter.currentText()
+        location = self.locationFilter.currentText()
+        if location == "Все склады":
+            location = ""
+        in_stock = self.inStockCheckbox.isChecked()
+
+        parts = self.db.get_parts(
+            search=search,
+            brand=brand,
+            condition=condition,
+            location=location,
+            in_stock_only=in_stock
+        )
+
+        # Обновить каталог
+        catalogModel = self.catalogTable.model()
+        catalogModel.setRowCount(0)
+        for row in parts:
+            oem, name, brand, model, body, year_start, year_end, photo, shop_url = row
+            years = f"{year_start or '?'}-{year_end or '?'}" if year_start or year_end else "?"
+            catalogModel.appendRow([
+                QStandardItem(oem or ""),
+                QStandardItem(name or ""),
+                QStandardItem(brand or ""),
+                QStandardItem(model or ""),
+                QStandardItem(years),
+                QStandardItem(photo or ""),
+                QStandardItem(shop_url or "")
+            ])
+
+        # Обновить инвентарь
+        inventory = self.db.get_inventory()
+        inventoryModel = self.inventoryTable.model()
+        inventoryModel.setRowCount(0)
+        for row in inventory:
+            oem, name, brand, model, body, year_start, year_end, price, qty, condition, store, address, phone, shop_url, photo = row
+            inventoryModel.appendRow([
+                QStandardItem(oem or ""),
+                QStandardItem(name or ""),
+                QStandardItem(brand or ""),
+                QStandardItem(model or ""),
+                QStandardItem(str(price) if price else ""),
+                QStandardItem(str(qty) if qty is not None else "0"),
+                QStandardItem(condition or ""),
+                QStandardItem(store or ""),
+                QStandardItem(address or ""),
+                QStandardItem(shop_url or "")
+            ])
+
+    def addPart(self):
+        """Диалог добавления запчасти"""
+        dialog = PartDialog(self, db=self.db)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.refreshInventory()
+
+    def editPart(self):
+        """Диалог редактирования запчасти"""
+        current_tab = self.tabWidget.currentIndex()
+        if current_tab == 0:
+            row = self.catalogTable.currentIndex().row()
+            if row < 0:
+                QMessageBox.warning(self, "Предупреждение", "Выберите запчасть для редактирования")
+                return
+            part_id = self.catalogTable.model().index(row, 0).data()
+        else:
+            row = self.inventoryTable.currentIndex().row()
+            if row < 0:
+                QMessageBox.warning(self, "Предупреждение", "Выберите запчасть для редактирования")
+                return
+            # Для инвентаря нужен ID - упростим: поиск по OEM
+            oem = self.inventoryTable.model().index(row, 0).data()
+            # В реальной реализации нужно хранить ID в скрытой колонке
+            QMessageBox.information(self, "Инфо", "Редактирование по ID будет реализовано")
+            return
+
+        dialog = PartDialog(self, db=self.db, part_id=part_id)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.refreshInventory()
+
+    def deletePart(self):
+        """Удаление запчасти"""
+        current_tab = self.tabWidget.currentIndex()
+        if current_tab == 0:
+            row = self.catalogTable.currentIndex().row()
+            if row < 0:
+                QMessageBox.warning(self, "Предупреждение", "Выберите запчасть для удаления")
+                return
+            part_id = self.catalogTable.model().index(row, 0).data()
+        else:
+            row = self.inventoryTable.currentIndex().row()
+            if row < 0:
+                QMessageBox.warning(self, "Предупреждение", "Выберите запчасть для удаления")
+                return
+            oem = self.inventoryTable.model().index(row, 0).data()
+            QMessageBox.information(self, "Инфо", "Удаление по ID будет реализовано")
+            return
+
+        reply = QMessageBox.question(
+            self, "Подтверждение",
+            f"Вы уверены, что хотите удалить запчасть ID={part_id}?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self.db.delete_part(part_id)
+            self.refreshInventory()
+
+
+class PartDialog(QDialog):
+    """Диалог добавления/редактирования запчасти"""
+    def __init__(self, parent=None, db=None, part_id=None):
+        super().__init__(parent)
+        self.db = db
+        self.part_id = part_id
+        self.setWindowTitle("Редактирование запчасти" if part_id else "Добавление запчасти")
+        self.resize(500, 600)
+        self.setupUI()
+        if part_id:
+            self.loadPartData()
+
+    def setupUI(self):
+        layout = QVBoxLayout(self)
+        formLayout = QFormLayout()
+
+        self.oemEdit = QLineEdit()
+        self.nameEdit = QLineEdit()
+        self.photoEdit = QLineEdit()
+        self.brandEdit = QLineEdit()
+        self.modelEdit = QLineEdit()
+        self.bodyEdit = QLineEdit()
+        self.yearStartEdit = QLineEdit()
+        self.yearEndEdit = QLineEdit()
+        self.addressEdit = QLineEdit()
+        self.storeEdit = QLineEdit()
+        self.phoneEdit = QLineEdit()
+        self.shopUrlEdit = QLineEdit()
+        self.shopUrlEdit.setPlaceholderText("https://...")
+        self.qtyEdit = QSpinBox()
+        self.qtyEdit.setMaximum(999999)
+        self.priceEdit = QLineEdit()
+        self.conditionCombo = QComboBox()
+        self.conditionCombo.addItems(["NEW", "USED"])
+
+        formLayout.addRow("OEM-номер:", self.oemEdit)
+        formLayout.addRow("Название:", self.nameEdit)
+        formLayout.addRow("Фото URL:", self.photoEdit)
+        formLayout.addRow("Марка:", self.brandEdit)
+        formLayout.addRow("Модель:", self.modelEdit)
+        formLayout.addRow("Код кузова:", self.bodyEdit)
+        formLayout.addRow("Год начала:", self.yearStartEdit)
+        formLayout.addRow("Год окончания:", self.yearEndEdit)
+        formLayout.addRow("Адрес:", self.addressEdit)
+        formLayout.addRow("Магазин:", self.storeEdit)
+        formLayout.addRow("Телефон:", self.phoneEdit)
+        formLayout.addRow("Ссылка на магазин:", self.shopUrlEdit)
+        formLayout.addRow("Количество:", self.qtyEdit)
+        formLayout.addRow("Цена:", self.priceEdit)
+        formLayout.addRow("Состояние:", self.conditionCombo)
+
+        layout.addLayout(formLayout)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def loadPartData(self):
+        """Загрузить данные запчасти для редактирования"""
+        # Упрощённая реализация
+        pass
+
+    def accept(self):
+        """Сохранить данные"""
+        try:
+            self.db.add_part(
+                oem_number=self.oemEdit.text().strip(),
+                part_name=self.nameEdit.text().strip(),
+                photo_url=self.photoEdit.text().strip() or None,
+                brand=self.brandEdit.text().strip(),
+                model=self.modelEdit.text().strip(),
+                body_code=self.bodyEdit.text().strip() or None,
+                year_start=int(self.yearStartEdit.text()) if self.yearStartEdit.text() else None,
+                year_end=int(self.yearEndEdit.text()) if self.yearEndEdit.text() else None,
+                address=self.addressEdit.text().strip(),
+                store_name=self.storeEdit.text().strip(),
+                phone=self.phoneEdit.text().strip() or None,
+                shop_url=self.shopUrlEdit.text().strip() or '',
+                quantity=self.qtyEdit.value(),
+                price=float(self.priceEdit.text().replace(',', '.')),
+                condition=self.conditionCombo.currentText()
+            )
+            QMessageBox.information(self, "Успех", "Запчасть добавлена")
+            super().accept()
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при сохранении: {e}")
 
 
 if __name__ == "__main__":

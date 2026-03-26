@@ -160,29 +160,30 @@ def add_part():
     address = input("Адрес магазина: ").strip()
     store_name = input("Название магазина: ").strip()
     phone = input("Телефон: ").strip() or None
-    
+    shop_url = input("Ссылка на магазин (оставьте пустым, если нет): ").strip() or ''
+
     quantity = input("Количество: ").strip()
     price = input("Цена: ").strip()
     condition = input("Состояние (new/used): ").strip().lower()
-    
+
     conn = get_connection()
     cur = conn.cursor()
-    
+
     try:
         cur.execute("""
             INSERT INTO parts_inventory (
                 oem_number, part_name, photo_url,
                 brand, model, body_code, year_start, year_end,
-                address, store_name, phone,
+                address, store_name, phone, shop_url,
                 quantity, price, condition
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id, oem_number, part_name;
         """, (
             oem_number, part_name, photo_url,
             brand, model, body_code,
             int(year_start) if year_start else None,
             int(year_end) if year_end else None,
-            address, store_name, phone,
+            address, store_name, phone, shop_url,
             int(quantity) if quantity else 0,
             Decimal(price), condition
         ))
@@ -244,19 +245,20 @@ def edit_part():
         
         print(f"\nТекущие данные: {part['oem_number']} - {part['part_name']}")
         print("Нажмите Enter, чтобы оставить текущее значение")
-        
+
         new_oem = input(f"OEM-номер [{part['oem_number']}]: ").strip() or part['oem_number']
         new_name = input(f"Название [{part['part_name']}]: ").strip() or part['part_name']
         new_price = input(f"Цена [{part['price']}]: ").strip() or part['price']
         new_qty = input(f"Количество [{part['quantity']}]: ").strip() or part['quantity']
         new_condition = input(f"Состояние [{part['condition']}]: ").strip() or part['condition']
-        
+        new_shop_url = input(f"Ссылка на магазин [{part['shop_url'] or ''}]: ").strip() or part['shop_url']
+
         cur.execute("""
             UPDATE parts_inventory SET
                 oem_number = %s, part_name = %s, price = %s,
-                quantity = %s, condition = %s, updated_at = NOW()
+                quantity = %s, condition = %s, shop_url = %s, updated_at = NOW()
             WHERE id = %s
-        """, (new_oem, new_name, Decimal(new_price), int(new_qty), new_condition.lower(), part_id))
+        """, (new_oem, new_name, Decimal(new_price), int(new_qty), new_condition.lower(), new_shop_url, part_id))
         
         conn.commit()
         print("Запчасть обновлена")
@@ -274,15 +276,17 @@ def print_parts(parts):
     if not parts:
         print("Запчасти не найдены")
         return
-    
+
     print(f"\nНайдено записей: {len(parts)}")
     print("-" * 100)
-    
+
     for p in parts:
         print(f"ID: {p['id']}")
         print(f"  OEM: {p['oem_number']} | Название: {p['part_name']}")
         print(f"  Авто: {p['brand']} {p['model']} {p['body_code'] or ''} ({p['year_start'] or '?'}-{p['year_end'] or '?'})")
         print(f"  Магазин: {p['store_name']} | Адрес: {p['address']}")
+        if p.get('shop_url'):
+            print(f"  Ссылка: {p['shop_url']}")
         print(f"  Цена: {p['price']} | Кол-во: {p['quantity']} | Состояние: {p['condition']}")
         print("-" * 100)
 

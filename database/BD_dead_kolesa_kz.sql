@@ -17,7 +17,8 @@ CREATE TABLE parts_inventory (
     address TEXT,
     store_name VARCHAR(100),
     phone VARCHAR(20),
-    
+    shop_url VARCHAR(500) NOT NULL DEFAULT '',
+
     -- Наличие и состояние
     quantity INTEGER DEFAULT 0 CHECK (quantity >= 0),
     price DECIMAL(10, 2) NOT NULL,
@@ -30,3 +31,4 @@ CREATE INDEX idx_oem_number ON parts_inventory(oem_number);
 CREATE INDEX idx_brand_model ON parts_inventory(brand, model);
 CREATE INDEX idx_years ON parts_inventory(year_start, year_end);
 CREATE INDEX idx_store ON parts_inventory(store_name);
+CREATE INDEX idx_shop_url ON parts_inventory(shop_url);
