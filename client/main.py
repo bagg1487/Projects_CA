@@ -3,6 +3,7 @@ from PyQt6.QtWidgets import *
 from PyQt6.QtCore import *
 from PyQt6.QtGui import *
 from database import Database
+import subprocess
 
 class MainWindow(QMainWindow):
     def __init__(self, parent=None):
@@ -27,7 +28,6 @@ class MainWindow(QMainWindow):
         mainLayout.setSpacing(15)
         mainLayout.setContentsMargins(20, 20, 20, 20)
 
-        # Верхняя панель
         topPanelLayout = QHBoxLayout()
         topPanelLayout.setSpacing(10)
 
@@ -59,7 +59,6 @@ class MainWindow(QMainWindow):
         topPanelLayout.addStretch()
         topPanelLayout.addWidget(self.themeToggleBtn)
 
-        # Кнопки действий
         buttonLayout = QHBoxLayout()
         self.addBtn = QPushButton("Добавить деталь", self)
         self.editBtn = QPushButton("Редактировать", self)
@@ -73,7 +72,6 @@ class MainWindow(QMainWindow):
         buttonLayout.addWidget(self.refreshBtn)
         buttonLayout.addStretch()
 
-        # Табы
         self.tabWidget = QTabWidget(self)
 
         catalogTab = QWidget()
@@ -102,14 +100,12 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(centralWidget)
 
     def setupModels(self):
-        # Каталог: OEM, Наименование, Марка/Модель, Годы, Фото, Ссылка
-        catalogModel = QStandardItemModel(0, 6, self)
+        catalogModel = QStandardItemModel(0, 7, self)
         catalogModel.setHorizontalHeaderLabels([
             "OEM-номер", "Наименование", "Марка", "Модель", "Годы", "Фото", "Ссылка"
         ])
         self.catalogTable.setModel(catalogModel)
 
-        # Инвентарь: OEM, Деталь, Марка/Модель, Цена, Кол-во, Состояние, Магазин, Адрес, Телефон, Ссылка
         inventoryModel = QStandardItemModel(0, 10, self)
         inventoryModel.setHorizontalHeaderLabels([
             "OEM", "Деталь", "Марка", "Модель", "Цена", "Количество", 
@@ -128,6 +124,33 @@ class MainWindow(QMainWindow):
         self.conditionFilter.currentTextChanged.connect(self.applyFilters)
         self.locationFilter.currentTextChanged.connect(self.applyFilters)
         self.inStockCheckbox.stateChanged.connect(self.applyFilters)
+        
+        self.catalogTable.clicked.connect(self.onCatalogTableClick)
+        self.inventoryTable.clicked.connect(self.onInventoryTableClick)
+
+    def open_url(self, url):
+        try:
+        # пробуем через wslview
+            subprocess.run(['wslview', url])
+        except FileNotFoundError:
+            try:
+            # fallback через Windows
+                subprocess.run(['cmd.exe', '/C', 'start', '', url])
+            except Exception as e:
+                print(f"Ошибка: {e}")
+
+
+    def onCatalogTableClick(self, index):
+        if index.column() == 6:
+            url = index.data()
+            if url and url.strip():
+                self.open_url(url.strip())
+
+    def onInventoryTableClick(self, index):
+        if index.column() == 9:
+            url = index.data()
+            if url and url.strip():
+                self.open_url(url.strip())
 
     def toggleTheme(self):
         self.isDarkMode = not self.isDarkMode
@@ -214,7 +237,6 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(styleSheet)
 
     def loadFilters(self):
-        """Загрузить фильтры из БД"""
         brands = self.db.get_all_brands()
         for brand in brands:
             self.brandFilter.addItem(brand)
@@ -225,11 +247,9 @@ class MainWindow(QMainWindow):
             self.locationFilter.addItem(display)
 
     def refreshInventory(self):
-        """Обновить данные в таблицах"""
         self.applyFilters()
 
     def applyFilters(self):
-        """Применить фильтры и обновить таблицы"""
         search = self.searchEdit.text()
         brand = self.brandFilter.currentText()
         if brand == "Все марки":
@@ -248,7 +268,6 @@ class MainWindow(QMainWindow):
             in_stock_only=in_stock
         )
 
-        # Обновить каталог
         catalogModel = self.catalogTable.model()
         catalogModel.setRowCount(0)
         for row in parts:
@@ -264,7 +283,6 @@ class MainWindow(QMainWindow):
                 QStandardItem(shop_url or "")
             ])
 
-        # Обновить инвентарь
         inventory = self.db.get_inventory()
         inventoryModel = self.inventoryTable.model()
         inventoryModel.setRowCount(0)
@@ -284,13 +302,11 @@ class MainWindow(QMainWindow):
             ])
 
     def addPart(self):
-        """Диалог добавления запчасти"""
         dialog = PartDialog(self, db=self.db)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.refreshInventory()
 
     def editPart(self):
-        """Диалог редактирования запчасти"""
         current_tab = self.tabWidget.currentIndex()
         if current_tab == 0:
             row = self.catalogTable.currentIndex().row()
@@ -303,9 +319,7 @@ class MainWindow(QMainWindow):
             if row < 0:
                 QMessageBox.warning(self, "Предупреждение", "Выберите запчасть для редактирования")
                 return
-            # Для инвентаря нужен ID - упростим: поиск по OEM
             oem = self.inventoryTable.model().index(row, 0).data()
-            # В реальной реализации нужно хранить ID в скрытой колонке
             QMessageBox.information(self, "Инфо", "Редактирование по ID будет реализовано")
             return
 
@@ -314,7 +328,6 @@ class MainWindow(QMainWindow):
             self.refreshInventory()
 
     def deletePart(self):
-        """Удаление запчасти"""
         current_tab = self.tabWidget.currentIndex()
         if current_tab == 0:
             row = self.catalogTable.currentIndex().row()
@@ -342,7 +355,6 @@ class MainWindow(QMainWindow):
 
 
 class PartDialog(QDialog):
-    """Диалог добавления/редактирования запчасти"""
     def __init__(self, parent=None, db=None, part_id=None):
         super().__init__(parent)
         self.db = db
@@ -402,12 +414,9 @@ class PartDialog(QDialog):
         layout.addWidget(buttons)
 
     def loadPartData(self):
-        """Загрузить данные запчасти для редактирования"""
-        # Упрощённая реализация
         pass
 
     def accept(self):
-        """Сохранить данные"""
         try:
             self.db.add_part(
                 oem_number=self.oemEdit.text().strip(),
