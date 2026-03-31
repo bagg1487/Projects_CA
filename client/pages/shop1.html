@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Автозапчасти PRO - Магазин №1</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+        .header p {
+            font-size: 16px;
+            opacity: 0.9;
+        }
+        .content {
+            padding: 40px;
+        }
+        .info-block {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .info-block h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        .info-block p {
+            color: #555;
+            margin: 5px 0;
+        }
+        .product {
+            border-top: 2px solid #e0e0e0;
+            padding-top: 20px;
+            margin-top: 20px;
+        }
+        .product h2 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+        .price {
+            font-size: 28px;
+            color: #e67e22;
+            font-weight: bold;
+            margin: 15px 0;
+        }
+        .btn {
+            display: inline-block;
+            background: #27ae60;
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            text-decoration: none;
+            transition: background 0.3s;
+        }
+        .btn:hover {
+            background: #219a52;
+        }
+        .footer {
+            background: #f8f9fa;
+            padding: 20px;
+            text-align: center;
+            color: #777;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Автозапчасти PRO</h1>
+            <p>Ваш надёжный поставщик автозапчастей</p>
+        </div>
+        <div class="content">
+            <div class="info-block">
+                <h3>📍 Адрес</h3>
+                <p>г. Алматы, ул. Ленина, 1</p>
+                <h3>📞 Телефон</h3>
+                <p>+7 (777) 123-45-67</p>
+                <h3>🕒 Режим работы</h3>
+                <p>Пн-Пт: 9:00 - 19:00</p>
+                <p>Сб: 10:00 - 16:00</p>
+                <p>Вс: Выходной</p>
+            </div>
+            <div class="product">
+                <h2>Масляный фильтр</h2>
+                <p>OEM: 12345-S12-123</p>
+                <div class="price">5 000 </div>
+                <button class="btn" onclick="alert('Товар добавлен в корзину!')">В корзину</button>
+            </div>
+        </div>
+        <div class="footer">
+        </div>
+    </div>
+</body>
+</html>

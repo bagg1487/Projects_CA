@@ -3,8 +3,6 @@ from decimal import Decimal
 from datetime import datetime
 
 
-# ==================== MERGESORT ====================
-
 def mergesort(data, key_func, reverse=False):
     """Сортировка слиянием по заданному ключу"""
     if len(data) <= 1:
@@ -46,8 +44,6 @@ def merge(left, right, key_func, reverse):
     return result
 
 
-# ==================== ДЕРЕВО ОПТИМАЛЬНОГО ПОИСКА (А2) ====================
-
 class TreeNode:
     """Узел дерева оптимального поиска"""
     def __init__(self, oem, record, left=None, right=None):
@@ -64,11 +60,9 @@ def build_optimal_bst(records):
     """
     if not records:
         return None
-    
-    # Сортируем записи по OEM для построения сбалансированного дерева
+
     sorted_records = sorted(records, key=lambda x: x['oem_number'])
-    
-    # Строим сбалансированное BST (медиана в корне)
+
     return build_balanced_bst(sorted_records, 0, len(sorted_records) - 1)
 
 
@@ -116,7 +110,6 @@ def inorder_traversal(node, result=None):
     return result
 
 
-# ==================== РАБОТА С БД ====================
 
 def get_connection():
     """Подключение к БД"""
@@ -154,36 +147,46 @@ def add_part():
     brand = input("Марка авто: ").strip()
     model = input("Модель авто: ").strip()
     body_code = input("Код кузова (например, RD1): ").strip() or None
-    year_start = input("Год начала выпуска: ").strip()
-    year_end = input("Год окончания выпуска: ").strip()
-    
+    year_start = input("Год начала выпуска: ").strip() or "1845"
+    while not (year_start.isnumeric() and int(year_start) > 1845 and int(year_start) <= datetime.now().year):
+        year_start = input("Некорректный ввод (Целое число больше 1845). Год начала выпуска: ").strip()  or "1845"
+    year_end = input("Год окончания выпуска: ").strip() or str(datetime.now().year)
+    while not (year_end.isnumeric() and int(year_end) >= int(year_start) and int(year_end) <= datetime.now().year):
+        year_end = input("Некорретный ввод (Целое число больше года начала выпуска"
+                         " и меньше либо равно нынешнему году). Год окончания выпуска: ").strip() or str(datetime.now().year)
+
     address = input("Адрес магазина: ").strip()
     store_name = input("Название магазина: ").strip()
     phone = input("Телефон: ").strip() or None
-    shop_url = input("Ссылка на магазин (оставьте пустым, если нет): ").strip() or ''
-
-    quantity = input("Количество: ").strip()
-    price = input("Цена: ").strip()
+    
+    quantity = input("Количество: ").strip() or "1"
+    while not (quantity.isnumeric() and int(quantity) >= 1):
+        quantity = input("Некорретный ввод. Количество: ").strip() or "1"
+    price = input("Цена: ").strip() or "0"
+    while not (price.isnumeric() and int(price) >= 0):
+        price = input("Некорретный ввод. Цена: ").strip() or "0"
     condition = input("Состояние (new/used): ").strip().lower()
+    while not (condition.lower() == "new" or condition.lower() == "used"):
+        condition = input("Состояние (new/used): ").strip().lower()
 
     conn = get_connection()
     cur = conn.cursor()
-
+    
     try:
         cur.execute("""
             INSERT INTO parts_inventory (
                 oem_number, part_name, photo_url,
                 brand, model, body_code, year_start, year_end,
-                address, store_name, phone, shop_url,
+                address, store_name, phone,
                 quantity, price, condition
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id, oem_number, part_name;
         """, (
             oem_number, part_name, photo_url,
             brand, model, body_code,
             int(year_start) if year_start else None,
             int(year_end) if year_end else None,
-            address, store_name, phone, shop_url,
+            address, store_name, phone,
             int(quantity) if quantity else 0,
             Decimal(price), condition
         ))
@@ -245,20 +248,19 @@ def edit_part():
         
         print(f"\nТекущие данные: {part['oem_number']} - {part['part_name']}")
         print("Нажмите Enter, чтобы оставить текущее значение")
-
+        
         new_oem = input(f"OEM-номер [{part['oem_number']}]: ").strip() or part['oem_number']
         new_name = input(f"Название [{part['part_name']}]: ").strip() or part['part_name']
         new_price = input(f"Цена [{part['price']}]: ").strip() or part['price']
         new_qty = input(f"Количество [{part['quantity']}]: ").strip() or part['quantity']
         new_condition = input(f"Состояние [{part['condition']}]: ").strip() or part['condition']
-        new_shop_url = input(f"Ссылка на магазин [{part['shop_url'] or ''}]: ").strip() or part['shop_url']
-
+        
         cur.execute("""
             UPDATE parts_inventory SET
                 oem_number = %s, part_name = %s, price = %s,
-                quantity = %s, condition = %s, shop_url = %s, updated_at = NOW()
+                quantity = %s, condition = %s, updated_at = NOW()
             WHERE id = %s
-        """, (new_oem, new_name, Decimal(new_price), int(new_qty), new_condition.lower(), new_shop_url, part_id))
+        """, (new_oem, new_name, Decimal(new_price), int(new_qty), new_condition.lower(), part_id))
         
         conn.commit()
         print("Запчасть обновлена")
@@ -271,24 +273,38 @@ def edit_part():
         conn.close()
 
 
-def print_parts(parts):
-    """Вывод списка запчастей"""
+def print_parts(parts, page_size=10):
+    """Вывод записей по 10 штук с запросом на продолжение"""
     if not parts:
         print("Запчасти не найдены")
         return
+    
+    total_pages = (len(parts) + page_size - 1) // page_size
+    current_page = 1
 
-    print(f"\nНайдено записей: {len(parts)}")
-    print("-" * 100)
+    while current_page <= total_pages:
+        start_idx = (current_page - 1) * page_size
+        end_idx = min(start_idx + page_size, len(parts))
 
-    for p in parts:
-        print(f"ID: {p['id']}")
-        print(f"  OEM: {p['oem_number']} | Название: {p['part_name']}")
-        print(f"  Авто: {p['brand']} {p['model']} {p['body_code'] or ''} ({p['year_start'] or '?'}-{p['year_end'] or '?'})")
-        print(f"  Магазин: {p['store_name']} | Адрес: {p['address']}")
-        if p.get('shop_url'):
-            print(f"  Ссылка: {p['shop_url']}")
-        print(f"  Цена: {p['price']} | Кол-во: {p['quantity']} | Состояние: {p['condition']}")
+        print(f"\nНайдено записей: {len(parts)} (показаны {start_idx + 1}-{end_idx})")
         print("-" * 100)
+
+        for p in parts[start_idx:end_idx]:
+            print(f"ID: {p['id']}")
+            print(f"  OEM: {p['oem_number']} | Название: {p['part_name']}")
+            print(f"  Авто: {p['brand']} {p['model']} {p['body_code'] or ''} ({p['year_start'] or '?'}-{p['year_end'] or '?'})")
+            print(f"  Магазин: {p['store_name']} | Адрес: {p['address']}")
+            print(f"  Цена: {p['price']} | Кол-во: {p['quantity']} | Состояние: {p['condition']}")
+            print("-" * 100)
+
+        if current_page < total_pages:
+            choice = input("\nПоказать следующие 10 записей? (y/n): ").strip().lower()
+            if choice == 'y' or choice == 'да':
+                current_page += 1
+            else:
+                break
+        else:
+            break
 
 
 # ==================== МЕНЮ ====================
@@ -373,8 +389,7 @@ def menu_sort():
     if not parts:
         print("Нет данных для сортировки")
         return
-    
-    # Определяем функции-ключи для сортировки
+
     sort_keys = {
         '1': lambda x: float(x['price']) if x['price'] else 0,
         '2': lambda x: x['oem_number'] or '',
@@ -383,11 +398,11 @@ def menu_sort():
     }
     
     if choices == '0':
-        # Сортировка по всем полям последовательно
+
         for key in ['1', '2', '3', '4']:
             parts = mergesort(parts, sort_keys[key], reverse)
     else:
-        # Сортировка по выбранным полям
+
         for choice in choices.replace(' ', '').split(','):
             if choice in sort_keys:
                 parts = mergesort(parts, sort_keys[choice], reverse)
@@ -397,18 +412,16 @@ def menu_sort():
 
 def menu_bst_search():
     """Поиск через дерево оптимального поиска"""
-    print("\n--- Поиск через дерево (ОПД А2) ---")
+    print("\n--- Поиск через дерево (ДОП А2) ---")
     
     parts = fetch_all_parts()
     if not parts:
         print("Нет данных для построения дерева")
         return
-    
-    # Строим дерево
+
     bst_root = build_optimal_bst(parts)
     print(f"Дерево построено ({len(parts)} записей)")
-    
-    # Поиск
+
     oem_query = input("Введите OEM-номер для поиска: ").strip()
     result = search_in_bst(bst_root, oem_query)
     
@@ -438,7 +451,7 @@ def main():
         print("2) Добавление запчасти")
         print("3) Поиск запчастей")
         print("4) Сортировка (Mergesort)")
-        print("5) Поиск через дерево (ОПД А2)")
+        print("5) Поиск через дерево (ДОП А2)")
         print("6) Удаление запчасти")
         print("7) Редактирование запчасти")
         print("0) Выход")
