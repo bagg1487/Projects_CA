@@ -1,3 +1,4 @@
+from PyQt6 import sip
 from utils.algorithms import mergesort
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
@@ -37,21 +38,26 @@ class ImageLoader(QObject):
         reply = self._manager.get(req)
         self._pending[reply] = label
 
-    def _on_finished(self, reply: QNetworkReply):
-        label = self._pending.pop(reply, None)
-        if label is None:
-            reply.deleteLater()
+    def _on_finished(self, reply):
+        label = self._pending.get(reply)
+        if not label:
             return
+
+        if sip.isdeleted(label):
+            del self._pending[reply]
+            return
+
         if reply.error() == QNetworkReply.NetworkError.NoError:
             data = reply.readAll()
             pix = QPixmap()
-            pix.loadFromData(data)
-            if not pix.isNull():
+            if pix.loadFromData(data):
                 label.setPixmap(
-                    pix.scaled(200, 160, Qt.AspectRatioMode.KeepAspectRatio,
+                    pix.scaled(200, 160,
+                               Qt.AspectRatioMode.KeepAspectRatio,
                                Qt.TransformationMode.SmoothTransformation)
                 )
-        reply.deleteLater()
+
+        del self._pending[reply]
 
 
 def _placeholder_pixmap(w=200, h=160, dark=False) -> QPixmap:
@@ -187,7 +193,7 @@ class PartCard(QFrame):
         else:
             self.setStyleSheet(
                 "PartCard { background-color: #ffffff; border: 1px solid #e9ecef; "
-                "border-radius: 10px; box-shadow: none; } "
+                "border-radius: 10px; } "
                 "PartCard:hover { border: 1px solid #339af0; } "
                 "QPushButton[cardBtn=true] { padding: 5px 10px; font-size: 11px; } "
             )
