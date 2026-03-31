@@ -1,13 +1,12 @@
+from utils.algorithms import mergesort # Теперь импорт локальный и стабильный
+
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QComboBox, QCheckBox, QPushButton,
     QTableView, QTabWidget, QAbstractItemView,
-    QDialog, QMessageBox, QLabel
+    QDialog, QMessageBox, QLabel, QScrollArea, QFrame
 )
-from PyQt6.QtCore import (
-    Qt, QSortFilterProxyModel, QPropertyAnimation,
-    QEasingCurve, pyqtProperty
-)
+from PyQt6.QtCore import Qt, QSortFilterProxyModel, QPropertyAnimation, QEasingCurve, pyqtProperty
 from PyQt6.QtGui import (
     QColor, QPainter, QPen, QBrush, QFont,
     QStandardItemModel, QStandardItem
@@ -17,11 +16,11 @@ from typing import List
 from models import Part
 from controllers.part_controller import PartController
 from views.dialogs import PartDialog, open_url
+from views.card_view import CardView
 from utils.theme import ThemeManager
 
 
 class ThemeToggle(QPushButton):
-    """Кастомный виджет-переключатель с анимацией (светлая ↔ тёмная тема)"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -30,11 +29,9 @@ class ThemeToggle(QPushButton):
         self.setFixedSize(140, 36)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setCheckable(True)
-
         self._anim = QPropertyAnimation(self, b"thumb_x", self)
         self._anim.setDuration(220)
         self._anim.setEasingCurve(QEasingCurve.Type.InOutCubic)
-
         self.toggled.connect(self._on_toggle)
 
     def get_thumb_x(self):
@@ -48,27 +45,20 @@ class ThemeToggle(QPushButton):
 
     def _on_toggle(self, checked: bool):
         self._dark = checked
-        end_x = 100 if checked else 4
         self._anim.stop()
         self._anim.setStartValue(self._thumb_x)
-        self._anim.setEndValue(end_x)
+        self._anim.setEndValue(100 if checked else 4)
         self._anim.start()
 
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-
         w, h = self.width(), self.height()
         r = h // 2
-
-        if self._dark:
-            track_col = QColor('#1c7ed6')
-        else:
-            track_col = QColor('#dee2e6')
+        track_col = QColor('#1c7ed6') if self._dark else QColor('#dee2e6')
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QBrush(track_col))
         p.drawRoundedRect(0, 0, w, h, r, r)
-
         p.setPen(QPen(QColor('#ffffff' if self._dark else '#495057')))
         f = QFont()
         f.setPointSize(9)
@@ -78,18 +68,37 @@ class ThemeToggle(QPushButton):
             p.drawText(8, 0, 80, h, Qt.AlignmentFlag.AlignVCenter, '☀  Светлая')
         else:
             p.drawText(38, 0, 90, h, Qt.AlignmentFlag.AlignVCenter, '🌙  Тёмная')
-
         thumb_size = h - 8
-        thumb_y = 4
-        thumb_col = QColor('#ffffff') if self._dark else QColor('#339af0')
-        p.setBrush(QBrush(thumb_col))
+        p.setBrush(QBrush(QColor('#ffffff') if self._dark else QColor('#339af0')))
         p.setPen(Qt.PenStyle.NoPen)
-        p.drawEllipse(self._thumb_x, thumb_y, thumb_size, thumb_size)
-
+        p.drawEllipse(self._thumb_x, 4, thumb_size, thumb_size)
         p.end()
 
+class MergeSortProxyModel(QSortFilterProxyModel):
+    def sort(self, column: int, order: Qt.SortOrder):
+        if column < 0: return
+        source_model = self.sourceModel()
+        if not source_model: return
+
+        rows_data = []
+        for i in range(source_model.rowCount()):
+            row_items = [source_model.item(i, j).clone() for j in range(source_model.columnCount())]
+            rows_data.append(row_items)
+
+        def key_func(row):
+            text = row[column].text()
+            try: return float(text.replace(' ', '').replace('₽', ''))
+            except ValueError: return text.lower()
+
+        is_reverse = (order == Qt.SortOrder.DescendingOrder)
+        sorted_data = mergesort(rows_data, key_func, is_reverse)
+
+        source_model.setRowCount(0)
+        for row in sorted_data:
+            source_model.appendRow(row)
+
 class MainWindow(QMainWindow):
-    """Главное окно приложения"""
+
     CAT_COLS = ['OEM-номер', 'Наименование', 'Марка/Модель', 'Годы', 'Фото', 'Магазин', '_id']
     INV_COLS = ['Деталь', 'OEM', 'Марка/Модель', 'Цена', 'Количество',
                 'Состояние', 'Магазин', 'Адрес', 'Ссылка']
@@ -98,6 +107,8 @@ class MainWindow(QMainWindow):
         super().__init__(parent)
         self.controller = PartController()
         self.theme_manager = ThemeManager()
+        self._dark = False
+        self._current_parts: List[Part] = []
 
         self.setupUI()
         self.setupModels()
@@ -119,7 +130,8 @@ class MainWindow(QMainWindow):
         root.addLayout(self._buildButtonPanel())
 
         self.tabWidget = QTabWidget(self)
-        self._buildCatalogTab()
+        self._buildCatalogTableTab()
+        self._buildCardTab()
         self._buildInventoryTab()
         root.addWidget(self.tabWidget)
 
@@ -145,7 +157,6 @@ class MainWindow(QMainWindow):
         self.locationFilter.setMinimumWidth(140)
 
         self.inStockCheckbox = QCheckBox('Только в наличии', self)
-
         self.themeToggle = ThemeToggle(self)
 
         layout.addWidget(self.searchEdit)
@@ -164,43 +175,40 @@ class MainWindow(QMainWindow):
         self.deleteBtn = QPushButton('🗑  Удалить', self)
         self.deleteBtn.setObjectName('deleteBtn')
         self.refreshBtn = QPushButton('🔄  Обновить', self)
-
         for btn in (self.addBtn, self.editBtn, self.deleteBtn, self.refreshBtn):
             layout.addWidget(btn)
         layout.addStretch()
         return layout
 
-    def _buildCatalogTab(self):
+    def _buildCatalogTableTab(self):
         tab = QWidget()
         lay = QVBoxLayout(tab)
         lay.setContentsMargins(4, 4, 4, 4)
-
         self.catalogTable = QTableView(self)
         self._configureTable(self.catalogTable)
-
-        hint = QLabel('💡 Кликните на ячейку «Фото» или «Магазин» чтобы открыть ссылку', self)
-        hint.setObjectName('hintLabel')
+        hint = QLabel('💡 Кликните ячейку «Фото» или «Магазин» чтобы открыть ссылку')
         hint.setStyleSheet('color: #868e96; font-size: 11px; padding: 2px 4px;')
-
         lay.addWidget(self.catalogTable)
         lay.addWidget(hint)
-        self.tabWidget.addTab(tab, 'Каталог запчастей')
+        self.tabWidget.addTab(tab, '📋  Таблица')
+
+    def _buildCardTab(self):
+        self.cardView = CardView(self)
+        self.cardView.edit_requested.connect(self._editPartById)
+        self.cardView.delete_requested.connect(self._deletePartById)
+        self.tabWidget.addTab(self.cardView, '🗂  Карточки')
 
     def _buildInventoryTab(self):
         tab = QWidget()
         lay = QVBoxLayout(tab)
         lay.setContentsMargins(4, 4, 4, 4)
-
         self.inventoryTable = QTableView(self)
         self._configureTable(self.inventoryTable)
-
-        hint = QLabel('💡 Кликните на ячейку «Ссылка» чтобы открыть магазин', self)
-        hint.setObjectName('hintLabel')
+        hint = QLabel('💡 Кликните ячейку «Ссылка» чтобы открыть магазин')
         hint.setStyleSheet('color: #868e96; font-size: 11px; padding: 2px 4px;')
-
         lay.addWidget(self.inventoryTable)
         lay.addWidget(hint)
-        self.tabWidget.addTab(tab, 'Наличие по складам')
+        self.tabWidget.addTab(tab, '🏭  Наличие по складам')
 
     @staticmethod
     def _configureTable(table: QTableView):
@@ -216,9 +224,9 @@ class MainWindow(QMainWindow):
         self.catalogModel = QStandardItemModel(0, len(self.CAT_COLS), self)
         self.catalogModel.setHorizontalHeaderLabels(self.CAT_COLS)
 
-        self.catalogProxy = QSortFilterProxyModel(self)
+        self.catalogProxy = MergeSortProxyModel(self)
         self.catalogProxy.setSourceModel(self.catalogModel)
-        self.catalogProxy.setSortCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+
         self.catalogTable.setModel(self.catalogProxy)
         self.catalogTable.setSortingEnabled(True)
         self.catalogTable.setColumnHidden(len(self.CAT_COLS) - 1, True)
@@ -226,9 +234,9 @@ class MainWindow(QMainWindow):
         self.inventoryModel = QStandardItemModel(0, len(self.INV_COLS), self)
         self.inventoryModel.setHorizontalHeaderLabels(self.INV_COLS)
 
-        self.inventoryProxy = QSortFilterProxyModel(self)
+        self.inventoryProxy = MergeSortProxyModel(self)
         self.inventoryProxy.setSourceModel(self.inventoryModel)
-        self.inventoryProxy.setSortCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+
         self.inventoryTable.setModel(self.inventoryProxy)
         self.inventoryTable.setSortingEnabled(True)
 
@@ -238,14 +246,11 @@ class MainWindow(QMainWindow):
         self.conditionFilter.currentTextChanged.connect(self.refreshData)
         self.locationFilter.currentTextChanged.connect(self.refreshData)
         self.inStockCheckbox.stateChanged.connect(self.refreshData)
-
         self.themeToggle.toggled.connect(self._onThemeToggled)
-
         self.addBtn.clicked.connect(self.addPart)
         self.editBtn.clicked.connect(self.editPart)
         self.deleteBtn.clicked.connect(self.deletePart)
         self.refreshBtn.clicked.connect(self.refreshData)
-
         self.catalogTable.clicked.connect(self._onCatalogCellClick)
         self.inventoryTable.clicked.connect(self._onInventoryCellClick)
 
@@ -271,14 +276,15 @@ class MainWindow(QMainWindow):
                 location=self.locationFilter.currentText(),
                 in_stock_only=self.inStockCheckbox.isChecked()
             )
+            self._current_parts = parts
+
             self.catalogModel.setRowCount(0)
             for p in parts:
-                years = p.years_display
                 row_items = [
                     QStandardItem(p.oem_number or ''),
                     QStandardItem(p.part_name or ''),
                     QStandardItem(p.car_info),
-                    QStandardItem(years),
+                    QStandardItem(p.years_display),
                     self._link_item(p.photo_url, '🖼 Фото'),
                     self._link_item(p.shop_url, '🔗 Магазин'),
                     QStandardItem(str(p.id)),
@@ -287,6 +293,8 @@ class MainWindow(QMainWindow):
 
             for i in range(len(self.CAT_COLS) - 1):
                 self.catalogTable.resizeColumnToContents(i)
+
+            self.cardView.set_parts(parts)
 
         except Exception as e:
             QMessageBox.critical(self, 'Ошибка', f'Не удалось загрузить каталог:\n{e}')
@@ -308,16 +316,13 @@ class MainWindow(QMainWindow):
                     self._link_item(it.shop_url, '🔗 Открыть'),
                 ]
                 self.inventoryModel.appendRow(row_items)
-
             for i in range(len(self.INV_COLS)):
                 self.inventoryTable.resizeColumnToContents(i)
-
         except Exception as e:
             QMessageBox.critical(self, 'Ошибка', f'Не удалось загрузить инвентарь:\n{e}')
 
     @staticmethod
     def _link_item(url: str | None, label: str) -> QStandardItem:
-        """Создать ячейку-ссылку"""
         if url and url.strip():
             item = QStandardItem(label)
             item.setData(url.strip(), Qt.ItemDataRole.UserRole)
@@ -329,18 +334,16 @@ class MainWindow(QMainWindow):
         return item
 
     def _onCatalogCellClick(self, proxy_index):
-        col = proxy_index.column()
-        if col in (4, 5):
-            src_index = self.catalogProxy.mapToSource(proxy_index)
-            url = self.catalogModel.itemFromIndex(src_index).data(Qt.ItemDataRole.UserRole)
+        if proxy_index.column() in (4, 5):
+            src = self.catalogProxy.mapToSource(proxy_index)
+            url = self.catalogModel.itemFromIndex(src).data(Qt.ItemDataRole.UserRole)
             if url:
                 open_url(url)
 
     def _onInventoryCellClick(self, proxy_index):
-        col = proxy_index.column()
-        if col == 8:
-            src_index = self.inventoryProxy.mapToSource(proxy_index)
-            url = self.inventoryModel.itemFromIndex(src_index).data(Qt.ItemDataRole.UserRole)
+        if proxy_index.column() == 8:
+            src = self.inventoryProxy.mapToSource(proxy_index)
+            url = self.inventoryModel.itemFromIndex(src).data(Qt.ItemDataRole.UserRole)
             if url:
                 open_url(url)
 
@@ -357,11 +360,14 @@ class MainWindow(QMainWindow):
     def editPart(self):
         part_id = self._selectedPartId()
         if part_id is None:
-            QMessageBox.warning(self, 'Внимание', 'Выберите запчасть для редактирования.')
+            QMessageBox.warning(self, 'Внимание', 'Выберите запчасть в таблице для редактирования.')
             return
+        self._editPartById(part_id)
+
+    def _editPartById(self, part_id: int):
         part = self.controller.get_part(part_id)
         if not part:
-            QMessageBox.warning(self, 'Ошибка', 'Запчасть не найдена в БД.')
+            QMessageBox.warning(self, 'Ошибка', 'Запчасть не найдена.')
             return
         dialog = PartDialog(self, part)
         if dialog.exec() == QDialog.DialogCode.Accepted:
@@ -375,15 +381,15 @@ class MainWindow(QMainWindow):
     def deletePart(self):
         part_id = self._selectedPartId()
         if part_id is None:
-            QMessageBox.warning(self, 'Внимание', 'Выберите запчасть для удаления.')
+            QMessageBox.warning(self, 'Внимание', 'Выберите запчасть в таблице для удаления.')
             return
-        proxy_idx = self.catalogTable.currentIndex()
-        src_idx = self.catalogProxy.mapToSource(proxy_idx)
-        name = self.catalogModel.item(src_idx.row(), 1).text()
+        self._deletePartById(part_id)
 
+    def _deletePartById(self, part_id: int):
+        part = self.controller.get_part(part_id)
+        name = part.part_name if part else f'ID={part_id}'
         reply = QMessageBox.question(
-            self, 'Подтверждение',
-            f"Удалить «{name}»?",
+            self, 'Подтверждение', f"Удалить «{name}»?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         if reply == QMessageBox.StandardButton.Yes:
@@ -397,12 +403,10 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, 'Ошибка', str(e))
 
     def _selectedPartId(self) -> int | None:
-        """Получить ID выбранной строки из каталога (через прокси)"""
         selected = self.catalogTable.selectedIndexes()
         if not selected:
             return None
-        proxy_row = selected[0].row()
-        id_proxy = self.catalogProxy.index(proxy_row, len(self.CAT_COLS) - 1)
+        id_proxy = self.catalogProxy.index(selected[0].row(), len(self.CAT_COLS) - 1)
         id_src   = self.catalogProxy.mapToSource(id_proxy)
         item     = self.catalogModel.itemFromIndex(id_src)
         if item and item.text():
@@ -410,10 +414,12 @@ class MainWindow(QMainWindow):
         return None
 
     def _onThemeToggled(self, dark: bool):
+        self._dark = dark
         if dark:
             self.applyDarkTheme()
         else:
             self.applyLightTheme()
+        self.cardView.set_dark(dark)
 
     def applyLightTheme(self):
         self.setStyleSheet(self.theme_manager.light_theme())

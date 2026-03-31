@@ -1,5 +1,4 @@
 class ThemeManager:
-    """Управление темами оформления"""
 
     @staticmethod
     def light_theme() -> str:
@@ -9,14 +8,25 @@ class ThemeManager:
             color: #212529;
         }
         QWidget {
-            background-color: transparent;
+            background-color: #f4f6f9;
             color: #212529;
             font-size: 13px;
         }
-        QScrollArea, QScrollArea > QWidget > QWidget {
+        QScrollArea {
+            background-color: #f4f6f9;
+            border: none;
+        }
+        QScrollArea > QWidget > QWidget {
             background-color: #f4f6f9;
         }
-
+        QTabWidget::pane {
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            background-color: #ffffff;
+        }
+        QTabWidget::pane > QWidget {
+            background-color: #ffffff;
+        }
         QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
             padding: 7px 11px;
             border: 1px solid #ced4da;
@@ -35,7 +45,6 @@ class ThemeManager:
             background-color: #e9ecef;
             color: #868e96;
         }
-
         QComboBox QAbstractItemView {
             background-color: #ffffff;
             color: #212529;
@@ -46,14 +55,12 @@ class ThemeManager:
         }
         QComboBox::drop-down { border: none; }
         QComboBox::down-arrow { image: none; width: 0px; }
-
         QSpinBox::up-button, QDoubleSpinBox::up-button,
         QSpinBox::down-button, QDoubleSpinBox::down-button {
             background-color: #e9ecef;
             border: none;
             width: 20px;
         }
-
         QPushButton {
             padding: 8px 18px;
             background-color: #339af0;
@@ -68,7 +75,6 @@ class ThemeManager:
         QPushButton#deleteBtn { background-color: #fa5252; }
         QPushButton#deleteBtn:hover  { background-color: #f03e3e; }
         QPushButton#deleteBtn:pressed { background-color: #e03131; }
-
         QTableView {
             background-color: #ffffff;
             border: 1px solid #e9ecef;
@@ -78,14 +84,12 @@ class ThemeManager:
             selection-color: #1864ab;
             alternate-background-color: #f8f9fa;
         }
-        QTableView::item { padding: 4px 8px; }
+        QTableView::item { padding: 4px 8px; color: #212529; background-color: transparent; }
         QTableView::item:selected {
             background-color: #d0ebff;
             color: #1864ab;
         }
-        QHeaderView {
-            background-color: #f8f9fa;
-        }
+        QHeaderView { background-color: #f8f9fa; }
         QHeaderView::section {
             background-color: #f8f9fa;
             padding: 8px 10px;
@@ -94,15 +98,7 @@ class ThemeManager:
             font-weight: 700;
             color: #495057;
         }
-        QHeaderView::section:hover {
-            background-color: #e9ecef;
-        }
-
-        QTabWidget::pane {
-            border: 1px solid #dee2e6;
-            border-radius: 6px;
-            background-color: #ffffff;
-        }
+        QHeaderView::section:hover { background-color: #e9ecef; }
         QTabBar::tab {
             background: #e9ecef;
             padding: 9px 20px;
@@ -119,8 +115,7 @@ class ThemeManager:
             color: #212529;
         }
         QTabBar::tab:hover:!selected { background: #dee2e6; }
-
-        QCheckBox { spacing: 6px; }
+        QCheckBox { spacing: 6px; background-color: transparent; }
         QCheckBox::indicator {
             width: 16px; height: 16px;
             border: 1px solid #adb5bd;
@@ -131,7 +126,6 @@ class ThemeManager:
             background-color: #339af0;
             border-color: #339af0;
         }
-
         QScrollBar:vertical {
             background: #f1f3f5; width: 8px; border-radius: 4px;
         }
@@ -139,9 +133,7 @@ class ThemeManager:
             background: #ced4da; border-radius: 4px; min-height: 30px;
         }
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
-
         QLabel { color: #212529; background: transparent; }
-
         QDialogButtonBox QPushButton { min-width: 90px; }
         QMessageBox { background-color: #ffffff; }
         QMessageBox QLabel { color: #212529; }
@@ -155,14 +147,25 @@ class ThemeManager:
             color: #c1c2c5;
         }
         QWidget {
-            background-color: transparent;
+            background-color: #1a1b1e;
             color: #c1c2c5;
             font-size: 13px;
         }
-        QScrollArea, QScrollArea > QWidget > QWidget {
+        QScrollArea {
+            background-color: #1a1b1e;
+            border: none;
+        }
+        QScrollArea > QWidget > QWidget {
             background-color: #1a1b1e;
         }
-
+        QTabWidget::pane {
+            border: 1px solid #373a40;
+            border-radius: 6px;
+            background-color: #1e1f23;
+        }
+        QTabWidget::pane > QWidget {
+            background-color: #1e1f23;
+        }
         QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
             padding: 7px 11px;
             border: 1px solid #373a40;
@@ -181,8 +184,6 @@ class ThemeManager:
             background-color: #1e1f23;
             color: #5c5f66;
         }
-        QLineEdit::placeholder { color: #5c5f66; }
-
         QComboBox QAbstractItemView {
             background-color: #25262b;
             color: #c1c2c5;
@@ -193,7 +194,6 @@ class ThemeManager:
         }
         QComboBox::drop-down { border: none; }
         QComboBox::down-arrow { image: none; width: 0px; }
-
         QSpinBox::up-button, QDoubleSpinBox::up-button,
         QSpinBox::down-button, QDoubleSpinBox::down-button {
             background-color: #373a40;
@@ -201,7 +201,6 @@ class ThemeManager:
             width: 20px;
             color: #c1c2c5;
         }
-
         QPushButton {
             padding: 8px 18px;
             background-color: #1c7ed6;
@@ -216,7 +215,6 @@ class ThemeManager:
         QPushButton#deleteBtn { background-color: #c92a2a; }
         QPushButton#deleteBtn:hover  { background-color: #b02020; }
         QPushButton#deleteBtn:pressed { background-color: #962020; }
-
         QTableView {
             background-color: #25262b;
             border: 1px solid #373a40;
@@ -227,15 +225,13 @@ class ThemeManager:
             alternate-background-color: #2a2b30;
             color: #c1c2c5;
         }
-        QTableView::item { padding: 4px 8px; color: #c1c2c5; }
+        QTableView::item { padding: 4px 8px; color: #c1c2c5; background-color: transparent; }
         QTableView::item:selected {
             background-color: #1864ab;
             color: #ffffff;
         }
         QTableView::item:alternate { background-color: #2a2b30; }
-        QHeaderView {
-            background-color: #1e1f23;
-        }
+        QHeaderView { background-color: #1e1f23; }
         QHeaderView::section {
             background-color: #1e1f23;
             color: #909296;
@@ -245,17 +241,10 @@ class ThemeManager:
             font-weight: 700;
         }
         QHeaderView::section:hover { background-color: #25262b; }
-
         QTableView QTableCornerButton::section {
             background-color: #1e1f23;
             border: none;
             border-bottom: 2px solid #373a40;
-        }
-
-        QTabWidget::pane {
-            border: 1px solid #373a40;
-            border-radius: 6px;
-            background-color: #1e1f23;
         }
         QTabBar::tab {
             background: #25262b;
@@ -273,8 +262,7 @@ class ThemeManager:
             color: #c1c2c5;
         }
         QTabBar::tab:hover:!selected { background: #2c2e33; }
-
-        QCheckBox { spacing: 6px; color: #c1c2c5; }
+        QCheckBox { spacing: 6px; color: #c1c2c5; background-color: transparent; }
         QCheckBox::indicator {
             width: 16px; height: 16px;
             border: 1px solid #5c5f66;
@@ -285,7 +273,6 @@ class ThemeManager:
             background-color: #1c7ed6;
             border-color: #1c7ed6;
         }
-
         QScrollBar:vertical {
             background: #1e1f23; width: 8px; border-radius: 4px;
         }
@@ -300,15 +287,11 @@ class ThemeManager:
             background: #5c5f66; border-radius: 4px; min-width: 30px;
         }
         QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
-
         QLabel { color: #c1c2c5; background: transparent; }
-
         QDialogButtonBox QPushButton { min-width: 90px; }
         QMessageBox { background-color: #25262b; }
         QMessageBox QLabel { color: #c1c2c5; }
-
         QFormLayout QLabel { color: #909296; }
-
         QToolTip {
             background-color: #25262b;
             color: #c1c2c5;
