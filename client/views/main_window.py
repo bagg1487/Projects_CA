@@ -1,21 +1,103 @@
-from PyQt6.QtWidgets import *
-from PyQt6.QtCore import *
-from PyQt6.QtGui import *
+from PyQt6.QtWidgets import (
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QLineEdit, QComboBox, QCheckBox, QPushButton,
+    QTableView, QTabWidget, QAbstractItemView,
+    QDialog, QMessageBox, QLabel
+)
+from PyQt6.QtCore import (
+    Qt, QSortFilterProxyModel, QPropertyAnimation,
+    QEasingCurve, pyqtProperty
+)
+from PyQt6.QtGui import (
+    QColor, QPainter, QPen, QBrush, QFont,
+    QStandardItemModel, QStandardItem
+)
 from typing import List
+
 from models import Part
 from controllers.part_controller import PartController
-from views.dialogs import PartDialog
+from views.dialogs import PartDialog, open_url
 from utils.theme import ThemeManager
 
 
+class ThemeToggle(QPushButton):
+    """Кастомный виджет-переключатель с анимацией (светлая ↔ тёмная тема)"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._dark = False
+        self._thumb_x = 4
+        self.setFixedSize(140, 36)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setCheckable(True)
+
+        self._anim = QPropertyAnimation(self, b"thumb_x", self)
+        self._anim.setDuration(220)
+        self._anim.setEasingCurve(QEasingCurve.Type.InOutCubic)
+
+        self.toggled.connect(self._on_toggle)
+
+    def get_thumb_x(self):
+        return self._thumb_x
+
+    def set_thumb_x(self, val):
+        self._thumb_x = val
+        self.update()
+
+    thumb_x = pyqtProperty(int, fget=get_thumb_x, fset=set_thumb_x)
+
+    def _on_toggle(self, checked: bool):
+        self._dark = checked
+        end_x = 100 if checked else 4
+        self._anim.stop()
+        self._anim.setStartValue(self._thumb_x)
+        self._anim.setEndValue(end_x)
+        self._anim.start()
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        w, h = self.width(), self.height()
+        r = h // 2
+
+        if self._dark:
+            track_col = QColor('#1c7ed6')
+        else:
+            track_col = QColor('#dee2e6')
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(track_col))
+        p.drawRoundedRect(0, 0, w, h, r, r)
+
+        p.setPen(QPen(QColor('#ffffff' if self._dark else '#495057')))
+        f = QFont()
+        f.setPointSize(9)
+        f.setBold(True)
+        p.setFont(f)
+        if self._dark:
+            p.drawText(8, 0, 80, h, Qt.AlignmentFlag.AlignVCenter, '☀  Светлая')
+        else:
+            p.drawText(38, 0, 90, h, Qt.AlignmentFlag.AlignVCenter, '🌙  Тёмная')
+
+        thumb_size = h - 8
+        thumb_y = 4
+        thumb_col = QColor('#ffffff') if self._dark else QColor('#339af0')
+        p.setBrush(QBrush(thumb_col))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawEllipse(self._thumb_x, thumb_y, thumb_size, thumb_size)
+
+        p.end()
+
 class MainWindow(QMainWindow):
-    """Главное окно приложения (только UI)"""
+    """Главное окно приложения"""
+    CAT_COLS = ['OEM-номер', 'Наименование', 'Марка/Модель', 'Годы', 'Фото', 'Магазин', '_id']
+    INV_COLS = ['Деталь', 'OEM', 'Марка/Модель', 'Цена', 'Количество',
+                'Состояние', 'Магазин', 'Адрес', 'Ссылка']
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.controller = PartController()
         self.theme_manager = ThemeManager()
-        self.isDarkMode = False
 
         self.setupUI()
         self.setupModels()
@@ -24,54 +106,47 @@ class MainWindow(QMainWindow):
         self.refreshData()
         self.applyLightTheme()
 
-        self.resize(1024, 768)
-        self.setWindowTitle("Система складского учета автозапчастей")
+        self.resize(1200, 800)
+        self.setWindowTitle('Система складского учёта автозапчастей')
 
     def setupUI(self):
-        """Настройка UI компонентов"""
-        centralWidget = QWidget(self)
-        mainLayout = QVBoxLayout(centralWidget)
-        mainLayout.setSpacing(15)
-        mainLayout.setContentsMargins(20, 20, 20, 20)
+        central = QWidget(self)
+        root = QVBoxLayout(central)
+        root.setSpacing(12)
+        root.setContentsMargins(18, 16, 18, 16)
 
-        topPanel = self.createFilterPanel()
-
-        buttonPanel = self.createButtonPanel()
+        root.addLayout(self._buildFilterPanel())
+        root.addLayout(self._buildButtonPanel())
 
         self.tabWidget = QTabWidget(self)
-        self.setupCatalogTab()
-        self.setupInventoryTab()
+        self._buildCatalogTab()
+        self._buildInventoryTab()
+        root.addWidget(self.tabWidget)
 
-        mainLayout.addLayout(topPanel)
-        mainLayout.addLayout(buttonPanel)
-        mainLayout.addWidget(self.tabWidget)
+        self.setCentralWidget(central)
 
-        self.setCentralWidget(centralWidget)
-
-    def createFilterPanel(self) -> QHBoxLayout:
-        """Создать панель фильтров"""
+    def _buildFilterPanel(self) -> QHBoxLayout:
         layout = QHBoxLayout()
-        layout.setSpacing(10)
+        layout.setSpacing(8)
 
         self.searchEdit = QLineEdit(self)
-        self.searchEdit.setPlaceholderText("Поиск по OEM, названию или марке/модели...")
-        self.searchEdit.setMinimumWidth(300)
+        self.searchEdit.setPlaceholderText('Поиск по OEM, названию, марке/модели…')
+        self.searchEdit.setMinimumWidth(280)
 
         self.brandFilter = QComboBox(self)
-        self.brandFilter.addItem("Все марки")
+        self.brandFilter.addItem('Все марки')
+        self.brandFilter.setMinimumWidth(130)
 
         self.conditionFilter = QComboBox(self)
-        self.conditionFilter.addItem("Любое состояние")
-        self.conditionFilter.addItem("NEW")
-        self.conditionFilter.addItem("USED")
+        self.conditionFilter.addItems(['Любое состояние', 'NEW', 'USED'])
 
         self.locationFilter = QComboBox(self)
-        self.locationFilter.addItem("Все склады")
+        self.locationFilter.addItem('Все склады')
+        self.locationFilter.setMinimumWidth(140)
 
-        self.inStockCheckbox = QCheckBox("Только в наличии", self)
+        self.inStockCheckbox = QCheckBox('Только в наличии', self)
 
-        self.themeToggleBtn = QPushButton("🌙 Тёмная тема", self)
-        self.themeToggleBtn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.themeToggle = ThemeToggle(self)
 
         layout.addWidget(self.searchEdit)
         layout.addWidget(self.brandFilter)
@@ -79,107 +154,115 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.locationFilter)
         layout.addWidget(self.inStockCheckbox)
         layout.addStretch()
-        layout.addWidget(self.themeToggleBtn)
-
+        layout.addWidget(self.themeToggle)
         return layout
 
-    def createButtonPanel(self) -> QHBoxLayout:
-        """Создать панель кнопок"""
+    def _buildButtonPanel(self) -> QHBoxLayout:
         layout = QHBoxLayout()
+        self.addBtn    = QPushButton('➕  Добавить', self)
+        self.editBtn   = QPushButton('✏️  Редактировать', self)
+        self.deleteBtn = QPushButton('🗑  Удалить', self)
+        self.deleteBtn.setObjectName('deleteBtn')
+        self.refreshBtn = QPushButton('🔄  Обновить', self)
 
-        self.addBtn = QPushButton("Добавить деталь", self)
-        self.editBtn = QPushButton("Редактировать", self)
-        self.deleteBtn = QPushButton("Удалить", self)
-        self.deleteBtn.setObjectName("deleteBtn")
-
-        layout.addWidget(self.addBtn)
-        layout.addWidget(self.editBtn)
-        layout.addWidget(self.deleteBtn)
+        for btn in (self.addBtn, self.editBtn, self.deleteBtn, self.refreshBtn):
+            layout.addWidget(btn)
         layout.addStretch()
-
         return layout
 
-    def setupCatalogTab(self):
-        """Настройка вкладки каталога"""
-        catalogTab = QWidget()
-        catalogLayout = QVBoxLayout(catalogTab)
+    def _buildCatalogTab(self):
+        tab = QWidget()
+        lay = QVBoxLayout(tab)
+        lay.setContentsMargins(4, 4, 4, 4)
 
         self.catalogTable = QTableView(self)
-        self.catalogTable.setSelectionBehavior(
-            QAbstractItemView.SelectionBehavior.SelectRows
-        )
-        self.catalogTable.setEditTriggers(
-            QAbstractItemView.EditTrigger.NoEditTriggers
-        )
-        self.catalogTable.horizontalHeader().setStretchLastSection(True)
+        self._configureTable(self.catalogTable)
 
-        catalogLayout.addWidget(self.catalogTable)
-        self.tabWidget.addTab(catalogTab, "Каталог запчастей")
+        hint = QLabel('💡 Кликните на ячейку «Фото» или «Магазин» чтобы открыть ссылку', self)
+        hint.setObjectName('hintLabel')
+        hint.setStyleSheet('color: #868e96; font-size: 11px; padding: 2px 4px;')
 
-    def setupInventoryTab(self):
-        """Настройка вкладки инвентаря"""
-        inventoryTab = QWidget()
-        inventoryLayout = QVBoxLayout(inventoryTab)
+        lay.addWidget(self.catalogTable)
+        lay.addWidget(hint)
+        self.tabWidget.addTab(tab, 'Каталог запчастей')
+
+    def _buildInventoryTab(self):
+        tab = QWidget()
+        lay = QVBoxLayout(tab)
+        lay.setContentsMargins(4, 4, 4, 4)
 
         self.inventoryTable = QTableView(self)
-        self.inventoryTable.setSelectionBehavior(
-            QAbstractItemView.SelectionBehavior.SelectRows
-        )
-        self.inventoryTable.setEditTriggers(
-            QAbstractItemView.EditTrigger.NoEditTriggers
-        )
-        self.inventoryTable.horizontalHeader().setStretchLastSection(True)
+        self._configureTable(self.inventoryTable)
 
-        inventoryLayout.addWidget(self.inventoryTable)
-        self.tabWidget.addTab(inventoryTab, "Наличие по складам")
+        hint = QLabel('💡 Кликните на ячейку «Ссылка» чтобы открыть магазин', self)
+        hint.setObjectName('hintLabel')
+        hint.setStyleSheet('color: #868e96; font-size: 11px; padding: 2px 4px;')
+
+        lay.addWidget(self.inventoryTable)
+        lay.addWidget(hint)
+        self.tabWidget.addTab(tab, 'Наличие по складам')
+
+    @staticmethod
+    def _configureTable(table: QTableView):
+        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.horizontalHeader().setStretchLastSection(True)
+        table.horizontalHeader().setSectionsClickable(True)
+        table.setAlternatingRowColors(True)
+        table.verticalHeader().setDefaultSectionSize(28)
+        table.verticalHeader().hide()
 
     def setupModels(self):
-        """Настройка моделей данных для таблиц"""
-        self.catalogModel = QStandardItemModel(0, 4, self)
-        self.catalogModel.setHorizontalHeaderLabels(
-            ["ID", "OEM-номер", "Наименование", "Марка/Модель"]
-        )
-        self.catalogTable.setModel(self.catalogModel)
+        self.catalogModel = QStandardItemModel(0, len(self.CAT_COLS), self)
+        self.catalogModel.setHorizontalHeaderLabels(self.CAT_COLS)
 
-        self.inventoryModel = QStandardItemModel(0, 6, self)
-        self.inventoryModel.setHorizontalHeaderLabels(
-            ["Деталь", "OEM", "Марка/Модель", "Цена", "Количество", "Адрес склада"]
-        )
-        self.inventoryTable.setModel(self.inventoryModel)
+        self.catalogProxy = QSortFilterProxyModel(self)
+        self.catalogProxy.setSourceModel(self.catalogModel)
+        self.catalogProxy.setSortCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.catalogTable.setModel(self.catalogProxy)
+        self.catalogTable.setSortingEnabled(True)
+        self.catalogTable.setColumnHidden(len(self.CAT_COLS) - 1, True)
 
-        self.catalogTable.setColumnHidden(0, True)
+        self.inventoryModel = QStandardItemModel(0, len(self.INV_COLS), self)
+        self.inventoryModel.setHorizontalHeaderLabels(self.INV_COLS)
+
+        self.inventoryProxy = QSortFilterProxyModel(self)
+        self.inventoryProxy.setSourceModel(self.inventoryModel)
+        self.inventoryProxy.setSortCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.inventoryTable.setModel(self.inventoryProxy)
+        self.inventoryTable.setSortingEnabled(True)
 
     def connectSignals(self):
-        """Подключение сигналов"""
         self.searchEdit.textChanged.connect(self.refreshData)
         self.brandFilter.currentTextChanged.connect(self.refreshData)
         self.conditionFilter.currentTextChanged.connect(self.refreshData)
         self.locationFilter.currentTextChanged.connect(self.refreshData)
         self.inStockCheckbox.stateChanged.connect(self.refreshData)
-        self.themeToggleBtn.clicked.connect(self.toggleTheme)
+
+        self.themeToggle.toggled.connect(self._onThemeToggled)
 
         self.addBtn.clicked.connect(self.addPart)
         self.editBtn.clicked.connect(self.editPart)
         self.deleteBtn.clicked.connect(self.deletePart)
+        self.refreshBtn.clicked.connect(self.refreshData)
+
+        self.catalogTable.clicked.connect(self._onCatalogCellClick)
+        self.inventoryTable.clicked.connect(self._onInventoryCellClick)
 
     def loadFilters(self):
-        """Загрузка фильтров"""
         try:
-            brands = self.controller.get_brands()
-            self.brandFilter.addItems(brands)
-
-            locations = self.controller.get_locations()
-            self.locationFilter.addItems(locations)
+            for brand in self.controller.get_brands():
+                self.brandFilter.addItem(brand)
+            for loc in self.controller.get_locations():
+                self.locationFilter.addItem(loc)
         except Exception as e:
-            QMessageBox.critical(self, "Ошибка", f"Не удалось загрузить фильтры: {e}")
+            QMessageBox.critical(self, 'Ошибка', f'Не удалось загрузить фильтры:\n{e}')
 
     def refreshData(self):
-        """Обновление данных в таблицах"""
-        self.loadCatalogData()
-        self.loadInventoryData()
+        self._loadCatalog()
+        self._loadInventory()
 
-    def loadCatalogData(self):
-        """Загрузка данных каталога"""
+    def _loadCatalog(self):
         try:
             parts = self.controller.get_all_parts(
                 search=self.searchEdit.text(),
@@ -188,118 +271,152 @@ class MainWindow(QMainWindow):
                 location=self.locationFilter.currentText(),
                 in_stock_only=self.inStockCheckbox.isChecked()
             )
-
             self.catalogModel.setRowCount(0)
-            for part in parts:
-                row = self.catalogModel.rowCount()
-                self.catalogModel.insertRow(row)
+            for p in parts:
+                years = p.years_display
+                row_items = [
+                    QStandardItem(p.oem_number or ''),
+                    QStandardItem(p.part_name or ''),
+                    QStandardItem(p.car_info),
+                    QStandardItem(years),
+                    self._link_item(p.photo_url, '🖼 Фото'),
+                    self._link_item(p.shop_url, '🔗 Магазин'),
+                    QStandardItem(str(p.id)),
+                ]
+                self.catalogModel.appendRow(row_items)
 
-                self.catalogModel.setItem(row, 0, QStandardItem(str(part.id)))
-                self.catalogModel.setItem(row, 1, QStandardItem(part.oem_number))
-                self.catalogModel.setItem(row, 2, QStandardItem(part.part_name))
-                self.catalogModel.setItem(row, 3, QStandardItem(part.car_info))
+            for i in range(len(self.CAT_COLS) - 1):
+                self.catalogTable.resizeColumnToContents(i)
 
         except Exception as e:
-            QMessageBox.critical(self, "Ошибка", f"Не удалось загрузить данные: {e}")
+            QMessageBox.critical(self, 'Ошибка', f'Не удалось загрузить каталог:\n{e}')
 
-    def loadInventoryData(self):
-        """Загрузка данных инвентаря"""
+    def _loadInventory(self):
         try:
-            inventory = self.controller.get_inventory()
-
+            items = self.controller.get_inventory()
             self.inventoryModel.setRowCount(0)
-            for item in inventory:
-                row = self.inventoryModel.rowCount()
-                self.inventoryModel.insertRow(row)
+            for it in items:
+                row_items = [
+                    QStandardItem(it.part_name),
+                    QStandardItem(it.oem_number),
+                    QStandardItem(it.car_model),
+                    QStandardItem(str(it.price)),
+                    QStandardItem(str(it.quantity)),
+                    QStandardItem(it.condition.upper()),
+                    QStandardItem(it.store_name),
+                    QStandardItem(it.address),
+                    self._link_item(it.shop_url, '🔗 Открыть'),
+                ]
+                self.inventoryModel.appendRow(row_items)
 
-                self.inventoryModel.setItem(row, 0, QStandardItem(item.part_name))
-                self.inventoryModel.setItem(row, 1, QStandardItem(item.oem_number))
-                self.inventoryModel.setItem(row, 2, QStandardItem(item.car_model))
-                self.inventoryModel.setItem(row, 3, QStandardItem(str(item.price)))
-                self.inventoryModel.setItem(row, 4, QStandardItem(str(item.quantity)))
-                self.inventoryModel.setItem(row, 5, QStandardItem(item.address))
+            for i in range(len(self.INV_COLS)):
+                self.inventoryTable.resizeColumnToContents(i)
 
         except Exception as e:
-            QMessageBox.critical(self, "Ошибка", f"Не удалось загрузить инвентарь: {e}")
+            QMessageBox.critical(self, 'Ошибка', f'Не удалось загрузить инвентарь:\n{e}')
+
+    @staticmethod
+    def _link_item(url: str | None, label: str) -> QStandardItem:
+        """Создать ячейку-ссылку"""
+        if url and url.strip():
+            item = QStandardItem(label)
+            item.setData(url.strip(), Qt.ItemDataRole.UserRole)
+            item.setForeground(QColor('#1c7ed6'))
+            item.setToolTip(url.strip())
+        else:
+            item = QStandardItem('—')
+            item.setForeground(QColor('#868e96'))
+        return item
+
+    def _onCatalogCellClick(self, proxy_index):
+        col = proxy_index.column()
+        if col in (4, 5):
+            src_index = self.catalogProxy.mapToSource(proxy_index)
+            url = self.catalogModel.itemFromIndex(src_index).data(Qt.ItemDataRole.UserRole)
+            if url:
+                open_url(url)
+
+    def _onInventoryCellClick(self, proxy_index):
+        col = proxy_index.column()
+        if col == 8:
+            src_index = self.inventoryProxy.mapToSource(proxy_index)
+            url = self.inventoryModel.itemFromIndex(src_index).data(Qt.ItemDataRole.UserRole)
+            if url:
+                open_url(url)
 
     def addPart(self):
-        """Добавление запчасти"""
         dialog = PartDialog(self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             try:
-                data = dialog.getData()
-                self.controller.add_part(data)
+                self.controller.add_part(dialog.getData())
                 self.refreshData()
-                QMessageBox.information(self, "Успех", "Запчасть добавлена")
+                QMessageBox.information(self, 'Готово', 'Запчасть добавлена.')
             except Exception as e:
-                QMessageBox.critical(self, "Ошибка", str(e))
+                QMessageBox.critical(self, 'Ошибка', str(e))
 
     def editPart(self):
-        """Редактирование запчасти"""
-        selected = self.catalogTable.selectedIndexes()
-        if not selected:
-            QMessageBox.warning(self, "Предупреждение", "Выберите запчасть для редактирования")
+        part_id = self._selectedPartId()
+        if part_id is None:
+            QMessageBox.warning(self, 'Внимание', 'Выберите запчасть для редактирования.')
             return
-
-        row = selected[0].row()
-        part_id = int(self.catalogModel.item(row, 0).text())
         part = self.controller.get_part(part_id)
-
         if not part:
-            QMessageBox.warning(self, "Ошибка", "Запчасть не найдена")
+            QMessageBox.warning(self, 'Ошибка', 'Запчасть не найдена в БД.')
             return
-
         dialog = PartDialog(self, part)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             try:
-                data = dialog.getData()
-                self.controller.update_part(part_id, data)
+                self.controller.update_part(part_id, dialog.getData())
                 self.refreshData()
-                QMessageBox.information(self, "Успех", "Запчасть обновлена")
+                QMessageBox.information(self, 'Готово', 'Запчасть обновлена.')
             except Exception as e:
-                QMessageBox.critical(self, "Ошибка", str(e))
+                QMessageBox.critical(self, 'Ошибка', str(e))
 
     def deletePart(self):
-        """Удаление запчасти"""
-        selected = self.catalogTable.selectedIndexes()
-        if not selected:
-            QMessageBox.warning(self, "Предупреждение", "Выберите запчасть для удаления")
+        part_id = self._selectedPartId()
+        if part_id is None:
+            QMessageBox.warning(self, 'Внимание', 'Выберите запчасть для удаления.')
             return
-
-        row = selected[0].row()
-        part_id = int(self.catalogModel.item(row, 0).text())
-        part_name = self.catalogModel.item(row, 2).text()
+        proxy_idx = self.catalogTable.currentIndex()
+        src_idx = self.catalogProxy.mapToSource(proxy_idx)
+        name = self.catalogModel.item(src_idx.row(), 1).text()
 
         reply = QMessageBox.question(
-            self, "Подтверждение",
-            f"Удалить запчасть '{part_name}'?",
+            self, 'Подтверждение',
+            f"Удалить «{name}»?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
-
         if reply == QMessageBox.StandardButton.Yes:
             try:
                 if self.controller.delete_part(part_id):
                     self.refreshData()
-                    QMessageBox.information(self, "Успех", "Запчасть удалена")
+                    QMessageBox.information(self, 'Готово', 'Запчасть удалена.')
                 else:
-                    QMessageBox.warning(self, "Ошибка", "Запчасть не найдена")
+                    QMessageBox.warning(self, 'Ошибка', 'Запчасть не найдена.')
             except Exception as e:
-                QMessageBox.critical(self, "Ошибка", str(e))
+                QMessageBox.critical(self, 'Ошибка', str(e))
 
-    def toggleTheme(self):
-        """Переключение темы"""
-        self.isDarkMode = not self.isDarkMode
-        if self.isDarkMode:
-            self.themeToggleBtn.setText("☀️ Светлая тема")
+    def _selectedPartId(self) -> int | None:
+        """Получить ID выбранной строки из каталога (через прокси)"""
+        selected = self.catalogTable.selectedIndexes()
+        if not selected:
+            return None
+        proxy_row = selected[0].row()
+        id_proxy = self.catalogProxy.index(proxy_row, len(self.CAT_COLS) - 1)
+        id_src   = self.catalogProxy.mapToSource(id_proxy)
+        item     = self.catalogModel.itemFromIndex(id_src)
+        if item and item.text():
+            return int(item.text())
+        return None
+
+    def _onThemeToggled(self, dark: bool):
+        if dark:
             self.applyDarkTheme()
         else:
-            self.themeToggleBtn.setText("🌙 Тёмная тема")
             self.applyLightTheme()
 
     def applyLightTheme(self):
-        """Применить светлую тему"""
         self.setStyleSheet(self.theme_manager.light_theme())
 
     def applyDarkTheme(self):
-        """Применить тёмную тему"""
         self.setStyleSheet(self.theme_manager.dark_theme())

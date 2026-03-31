@@ -1,5 +1,4 @@
 import psycopg2
-from psycopg2 import sql
 from contextlib import contextmanager
 from decimal import Decimal
 from typing import List, Optional, Dict, Any
@@ -7,7 +6,7 @@ from models import Part, InventoryItem
 
 
 class Database:
-    """Класс для работы с базой данных (backend)"""
+    """Класс для работы с базой данных"""
 
     def __init__(self, dbname='parts_catalog', user='myuser',
                  password='mypassword', host='localhost', port='5432'):
@@ -21,7 +20,6 @@ class Database:
 
     @contextmanager
     def get_cursor(self):
-        """Контекстный менеджер для работы с курсором"""
         conn = psycopg2.connect(**self.conn_params)
         cursor = conn.cursor()
         try:
@@ -42,18 +40,19 @@ class Database:
             query = """
                 SELECT id, oem_number, part_name, photo_url,
                        brand, model, price, quantity, condition,
-                       address, store_name, phone, body_code, 
-                       year_start, year_end
+                       address, store_name, phone, body_code,
+                       year_start, year_end,
+                       COALESCE(shop_url, '') as shop_url
                 FROM parts_inventory
                 WHERE 1=1
             """
             params = []
 
             if search:
-                query += """ AND (oem_number ILIKE %s OR part_name ILIKE %s 
+                query += """ AND (oem_number ILIKE %s OR part_name ILIKE %s
                            OR brand ILIKE %s OR model ILIKE %s)"""
-                search_pattern = f'%{search}%'
-                params.extend([search_pattern, search_pattern, search_pattern, search_pattern])
+                sp = f'%{search}%'
+                params.extend([sp, sp, sp, sp])
 
             if brand and brand != 'Все марки':
                 query += " AND brand ILIKE %s"
@@ -62,6 +61,10 @@ class Database:
             if condition and condition != 'Любое состояние':
                 query += " AND condition = %s"
                 params.append(condition.lower())
+
+            if location and location != 'Все склады':
+                query += " AND (store_name ILIKE %s OR address ILIKE %s)"
+                params.extend([f'%{location}%', f'%{location}%'])
 
             if in_stock_only:
                 query += " AND quantity > 0"
@@ -86,7 +89,8 @@ class Database:
                     phone=row[11],
                     body_code=row[12],
                     year_start=row[13],
-                    year_end=row[14]
+                    year_end=row[14],
+                    shop_url=row[15],
                 ))
             return parts
 
@@ -94,14 +98,22 @@ class Database:
         """Получить список инвентаря"""
         with self.get_cursor() as cur:
             query = """
-                SELECT part_name, oem_number, 
+                SELECT part_name, oem_number,
                        COALESCE(brand, '') || ' ' || COALESCE(model, '') as car_model,
-                       price, quantity, address
+                       price, quantity, address,
+                       COALESCE(condition, 'new') as condition,
+                       COALESCE(store_name, '') as store_name,
+                       COALESCE(phone, '') as phone,
+                       COALESCE(shop_url, '') as shop_url,
+                       COALESCE(photo_url, '') as photo_url,
+                       COALESCE(brand, '') as brand,
+                       COALESCE(model, '') as model,
+                       COALESCE(body_code, '') as body_code,
+                       year_start, year_end
                 FROM parts_inventory
                 ORDER BY store_name, part_name
             """
             cur.execute(query)
-
             items = []
             for row in cur.fetchall():
                 items.append(InventoryItem(
@@ -110,62 +122,69 @@ class Database:
                     car_model=row[2].strip() or "Не указано",
                     price=Decimal(row[3]) if row[3] else Decimal(0),
                     quantity=row[4] or 0,
-                    address=row[5] or ""
+                    address=row[5] or "",
+                    condition=row[6],
+                    store_name=row[7],
+                    phone=row[8],
+                    shop_url=row[9],
+                    photo_url=row[10],
+                    brand=row[11],
+                    model=row[12],
+                    body_code=row[13],
+                    year_start=row[14],
+                    year_end=row[15],
                 ))
             return items
 
     def get_all_brands(self) -> List[str]:
-        """Получить все уникальные марки"""
         with self.get_cursor() as cur:
             cur.execute("""
-                SELECT DISTINCT brand 
-                FROM parts_inventory 
+                SELECT DISTINCT brand FROM parts_inventory
                 WHERE brand IS NOT NULL AND brand != ''
                 ORDER BY brand
             """)
             return [row[0] for row in cur.fetchall()]
 
     def get_all_locations(self) -> List[str]:
-        """Получить все уникальные адреса"""
         with self.get_cursor() as cur:
             cur.execute("""
-                SELECT DISTINCT address 
-                FROM parts_inventory 
-                WHERE address IS NOT NULL AND address != ''
-                ORDER BY address
+                SELECT DISTINCT COALESCE(store_name, address) as loc
+                FROM parts_inventory
+                WHERE COALESCE(store_name, address) IS NOT NULL
+                  AND COALESCE(store_name, address) != ''
+                ORDER BY loc
             """)
             return [row[0] for row in cur.fetchall()]
 
     def add_part(self, data: Dict[str, Any]) -> int:
-        """Добавить новую запчасть"""
         with self.get_cursor() as cur:
             query = """
                 INSERT INTO parts_inventory (
                     oem_number, part_name, photo_url,
                     brand, model, body_code, year_start, year_end,
-                    address, store_name, phone,
+                    address, store_name, phone, shop_url,
                     quantity, price, condition
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
             """
             cur.execute(query, (
                 data['oem_number'], data['part_name'], data.get('photo_url'),
-                data['brand'], data['model'], data.get('body_code'),
+                data.get('brand'), data.get('model'), data.get('body_code'),
                 data.get('year_start'), data.get('year_end'),
-                data['address'], data['store_name'], data.get('phone'),
+                data.get('address'), data.get('store_name'), data.get('phone'),
+                data.get('shop_url'),
                 data['quantity'], data['price'], data['condition']
             ))
             return cur.fetchone()[0]
 
     def update_part(self, part_id: int, data: Dict[str, Any]) -> bool:
-        """Обновить запчасть"""
         with self.get_cursor() as cur:
             query = """
                 UPDATE parts_inventory SET
                     oem_number = %s, part_name = %s, photo_url = %s,
                     brand = %s, model = %s, body_code = %s,
                     year_start = %s, year_end = %s,
-                    address = %s, store_name = %s, phone = %s,
+                    address = %s, store_name = %s, phone = %s, shop_url = %s,
                     quantity = %s, price = %s, condition = %s,
                     updated_at = NOW()
                 WHERE id = %s
@@ -173,24 +192,33 @@ class Database:
             """
             cur.execute(query, (
                 data['oem_number'], data['part_name'], data.get('photo_url'),
-                data['brand'], data['model'], data.get('body_code'),
+                data.get('brand'), data.get('model'), data.get('body_code'),
                 data.get('year_start'), data.get('year_end'),
-                data['address'], data['store_name'], data.get('phone'),
+                data.get('address'), data.get('store_name'), data.get('phone'),
+                data.get('shop_url'),
                 data['quantity'], data['price'], data['condition'],
                 part_id
             ))
             return cur.fetchone() is not None
 
     def delete_part(self, part_id: int) -> bool:
-        """Удалить запчасть"""
         with self.get_cursor() as cur:
-            cur.execute("DELETE FROM parts_inventory WHERE id = %s RETURNING id", (part_id,))
+            cur.execute(
+                "DELETE FROM parts_inventory WHERE id = %s RETURNING id",
+                (part_id,)
+            )
             return cur.fetchone() is not None
 
     def get_part_by_id(self, part_id: int) -> Optional[Part]:
-        """Получить запчасть по ID"""
         with self.get_cursor() as cur:
-            cur.execute("SELECT * FROM parts_inventory WHERE id = %s", (part_id,))
+            cur.execute("""
+                SELECT id, oem_number, part_name, photo_url,
+                       brand, model, body_code, year_start, year_end,
+                       address, store_name, phone,
+                       quantity, price, condition,
+                       COALESCE(shop_url, '') as shop_url
+                FROM parts_inventory WHERE id = %s
+            """, (part_id,))
             row = cur.fetchone()
             if row:
                 return Part(
@@ -200,14 +228,15 @@ class Database:
                     photo_url=row[3],
                     brand=row[4],
                     model=row[5],
-                    price=Decimal(row[13]) if row[13] else Decimal(0),
-                    quantity=row[12] or 0,
-                    condition=row[14] or 'new',
+                    body_code=row[6],
+                    year_start=row[7],
+                    year_end=row[8],
                     address=row[9],
                     store_name=row[10],
                     phone=row[11],
-                    body_code=row[6],
-                    year_start=row[7],
-                    year_end=row[8]
+                    quantity=row[12] or 0,
+                    price=Decimal(row[13]) if row[13] else Decimal(0),
+                    condition=row[14] or 'new',
+                    shop_url=row[15],
                 )
             return None

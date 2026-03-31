@@ -21,6 +21,7 @@ class Part:
     year_start: Optional[int] = None
     year_end: Optional[int] = None
     phone: Optional[str] = None
+    shop_url: Optional[str] = None
 
     @property
     def car_info(self) -> str:
@@ -34,6 +35,13 @@ class Part:
         """Отображение состояния"""
         return "NEW" if self.condition == 'new' else "USED"
 
+    @property
+    def years_display(self) -> str:
+        """Отображение годов"""
+        if self.year_start or self.year_end:
+            return f"{self.year_start or '?'} – {self.year_end or '?'}"
+        return ""
+
 
 @dataclass
 class InventoryItem:
@@ -44,3 +52,13 @@ class InventoryItem:
     price: Decimal
     quantity: int
     address: str
+    condition: str = 'new'
+    store_name: str = ''
+    phone: str = ''
+    shop_url: str = ''
+    photo_url: str = ''
+    brand: str = ''
+    model: str = ''
+    body_code: str = ''
+    year_start: Optional[int] = None
+    year_end: Optional[int] = None
