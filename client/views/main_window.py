@@ -86,9 +86,15 @@ class MergeSortProxyModel(QSortFilterProxyModel):
             rows_data.append(row_items)
 
         def key_func(row):
-            text = row[column].text()
-            try: return float(text.replace(' ', '').replace('₽', ''))
-            except ValueError: return text.lower()
+            text = row[column].text().strip()
+            if not text:
+                return (2, "")
+
+            try:
+                val = float(text.replace(' ', '').replace('₽', '').replace(',', '.'))
+                return (0, val)
+            except ValueError:
+                return (1, text.lower())
 
         is_reverse = (order == Qt.SortOrder.DescendingOrder)
         sorted_data = mergesort(rows_data, key_func, is_reverse)

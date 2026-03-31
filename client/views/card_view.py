@@ -263,7 +263,18 @@ class CardView(QWidget):
 
         def part_key_func(p):
             val = getattr(p, key)
-            return (val is None, val if val is not None else 0)
+            if val is None:
+                return (2, "")
+
+            if isinstance(val, (int, float)):
+                return (0, float(val))
+
+            text = str(val).strip()
+            try:
+                num_val = float(text.replace(' ', '').replace(',', '.'))
+                return (0, num_val)
+            except ValueError:
+                return (1, text.lower())
 
         sorted_parts = mergesort(list(self._parts), part_key_func, reverse=bool(reverse))
         self._render(sorted_parts)
