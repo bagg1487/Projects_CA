@@ -12,21 +12,44 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myuser -d parts_catalog"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
 volumes:
   pgdata:
 
-### ДЛЯ АКТИВАЦИИ ПРОПИШИ В ТЕРМИНАЛЕ В ПАПКЕ С ФАЙЛОМ
-### ВКЛЮЧИ ДОКЕР
+### ============================================
+### ЗАПУСК
+### ============================================
 ### docker-compose up -d
+###
+### Проверка здоровья контейнера:
+### docker inspect --format='{{.State.Health.Status}}' car_parts_db
+###
+### ============================================
+### ИНИЦИАЛИЗАЦИЯ БД (первый запуск)
+### ============================================
+### docker cp BD_dead_kolesa_kz.sql car_parts_db:/tmp/setup.sql
+### docker exec -it car_parts_db psql -U myuser -d parts_catalog -f /tmp/setup.sql
+###
+### Проверка таблиц:
+### docker exec -it car_parts_db psql -U myuser -d parts_catalog -c "\dt"
+###
+### ============================================
+### СИНХРОНИЗАЦИЯ ЧЕРЕЗ GITHUB
+### ============================================
+### Отправить изменения:
+###   cd database/ && ./sync_push.sh "коммит"
+###
+### Получить изменения:
+###   cd database/ && ./sync_pull.sh
+###
+### Подробнее: SYNC_README.md
+### ============================================
 
-### Создание таблиц (Активация кода)
-#Скопируй файл прямо в контейнер:
-#docker cp BD_dead_kolesa_kz.sql car_parts_db:/tmp/setup.sql
-
-#Запусти его выполнение внутри:
-#docker exec -it car_parts_db psql -U myuser -d parts_catalog -f /tmp/setup.sql
-# ДЛЯ ПРОВЕРКИ ЧТО ВСЁ СОЗДАЛОСЬ УСПЕШНО: docker exec -it car_parts_db psql -U myuser -d parts_catalog -c "\dt"
-
-# Общая команда для входа:
+# Вход в БД:
 # docker exec -it car_parts_db psql -U myuser -d parts_catalog

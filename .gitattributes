@@ -1,0 +1,19 @@
+# SQL-файлы — текстовый режим, LF окончания строк
+*.sql text eol=lf
+
+# Bash-скрипты
+*.sh text eol=lf
+
+# Дампы БД могут быть большими — не сжимать в Git
+database/full_backup.sql -diff
+database/BD_dead_kolesa_kz.sql -diff
+
+# Python
+*.py text eol=lf
+
+# Markdown
+*.md text eol=lf
+
+# YAML
+*.yml text eol=lf
+*.yaml text eol=lf
