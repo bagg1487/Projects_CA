@@ -1,112 +1,116 @@
-# Projects_CA
+# 🗄️ База данных — Projects_CA
 
-# Отчёт 12.03.2026 - создание БД
-# Структура и взаимодействие таблиц
-База данных спроектирована по принципам 3-й нормальной формы (3NF). Данные разделены таким образом, чтобы исключить дублирование и обеспечить целостность при каскадных операциях.
+Система складского учёта автозапчастей. PostgreSQL 15+ в Docker.
 
-## 1. Таблица car_models (Справочник автомобилей)
-Это фундаментальный справочник. Мы не пишем марку машины в каждой запчасти, а ссылаемся на эту таблицу.
+---
 
-Столбцы: id, brand (марка), model (модель), year_start/year_end (период выпуска), body_code (код кузова, например, RD1).
+## Структура БД
 
-Особенность: Поля brand, model и body_code образуют UNIQUE constraint. Это гарантирует, что у тебя не будет двух одинаковых "Honda CR-V RD1" в базе.
+Единая таблица `parts_inventory` — всё в одном месте: запчасти, совместимость с авто, магазины, наличие и цены.
 
-## 2. Таблица parts (Каталог запчастей)
-Здесь хранится "паспорт" детали. Она отделена от цен и складов, так как описание детали неизменно, где бы она ни лежала.
+```
+parts_inventory
+├── oem_number, part_name, photo_url    # Запчасть
+├── brand, model, body_code             # Совместимость
+├── year_start, year_end
+├── address, store_name, phone          # Магазин
+├── shop_url
+├── quantity, price, condition           # Наличие
+└── updated_at
+```
 
-Столбцы: id, oem_number (артикул производителя), part_name (название), photo_url.
+---
 
-Взаимодействие: Является "ядром". На её id ссылаются таблицы совместимости и инвентаря.
+## 🚀 Запуск
 
-## 3. Таблица part_compatibility (Таблица связей)
-Связующее звено между parts и car_models.
+### 1. Запустить контейнер
 
-Тип связи: Many-to-Many (Многие-ко-Многим).
+```bash
+cd database/
+docker-compose up -d
+```
 
-Зачем это нужно: Одна и та же деталь (например, масляный фильтр) может подходить к 20 разным моделям авто. Вместо создания 20 копий детали, мы создаем 20 легких записей-ссылок в этой таблице.
+### 2. Создать таблицу (первый раз)
 
-## 4. Таблица locations (Точки хранения)
-Справочник складов или магазинов.
+```bash
+docker cp BD_dead_kolesa_kz.sql car_parts_db:/tmp/setup.sql
+docker exec -it car_parts_db psql -U myuser -d parts_catalog -f /tmp/setup.sql
+```
 
-Столбцы: id, address, store_name, phone.
+### 3. Проверить
 
-Взаимодействие: Позволяет приложению выводить не просто «в наличии», а «в наличии по адресу ул. Ленина, 5».
+```bash
+docker exec -it car_parts_db psql -U myuser -d parts_catalog -c "\dt"
+```
 
-## 5. Таблица inventory (Учет и коммерция)
-Самая динамичная таблица. Здесь хранятся данные, которые меняются чаще всего.
+---
 
-Столбцы: part_id (какая деталь), location_id (где лежит), quantity (сколько), price (почем), condition (состояние).
+## 🔄 Синхронизация между устройствами
 
-Логика связей: * Связана с parts через FOREIGN KEY. Если удалить деталь из каталога, информация о её наличии удалится автоматически (ON DELETE CASCADE).
+Команда из 4 человек работает через GitHub. Один делает изменения → остальные получают.
 
-Контролирует состояние через CHECK (UPPER(condition) IN ('NEW', 'USED')), что исключает ошибки ввода.
+### Отправить изменения (тот, кто внёс изменения)
 
-# Технологический стек
-Database: PostgreSQL 15+
+```bash
+cd database/
+./sync_push.sh "описание что изменил"
+```
 
-Environment: Docker & Docker Compose
+### Получить изменения (все остальные)
 
-Language: Python 3.x
+```bash
+cd database/
+./sync_pull.sh
+```
 
-Driver: psycopg2-binary
+### Проверить состояние
 
-# Логика взаимодействия с Python
-Работа приложения строится по транзакционной модели. Пример процесса добавления новой единицы товара:
+```bash
+./sync_status.sh
+```
 
-Validation: Программа проверяет существование модели авто в car_models.
+### Только применить миграции (без потери данных)
 
-Normalization: Если модель найдена, используется её ID. Если нет — создается новая запись.
+```bash
+./apply_migrations.sh
+```
 
-Data Integrity: При добавлении запчасти в inventory, база автоматически проверяет поле condition. Благодаря ограничению CHECK (UPPER(condition) IN ('NEW', 'USED')), исключается попадание некорректных статусов.
+> ⚠️ **Правило:** только один человек меняет БД за раз. Остальные получают через `sync_pull.sh`.
 
-Optimization: Поиск по артикулу (OEM) ускорен с помощью B-Tree индекса idx_oem.
+Подробности: [SYNC_README.md](SYNC_README.md)
 
-# Основные SQL запросы
-Получение полного отчета о наличии (JOIN запрос)
-Этот запрос собирает данные из всех таблиц в одну удобную таблицу для интерфейса приложения:
+---
 
-SQL
-SELECT 
-    p.part_name, 
-    p.oem_number, 
-    m.brand, 
-    m.model, 
-    i.price, 
-    i.quantity, 
-    l.address
-FROM parts p
-JOIN part_compatibility pc ON p.id = pc.part_id
-JOIN car_models m ON pc.model_id = m.id
-JOIN inventory i ON p.id = i.part_id
-JOIN locations l ON i.location_id = l.id
-WHERE i.quantity > 0;
+## 🧪 Тесты
 
-# Развертывание (Quick Start) \ Запуск контейнера:
+```bash
+cd database/
+python test.py
+```
 
-# Bash
-### ДЛЯ АКТИВАЦИИ ПРОПИШИ В ТЕРМИНАЛЕ В ПАПКЕ С ФАЙЛОМ
-### ВКЛЮЧИ ДОКЕР
-### docker-compose up -d
+Проверяет: сортировку (Mergesort), дерево поиска (ОПД А2), подключение к БД, вывод данных.
 
-## Создание таблиц (Активация кода)
-## Скопируй файл прямо в контейнер:
-## docker cp BD_dead_kolesa_kz.sql car_parts_db:/tmp/setup.sql
+---
 
-## Запусти его выполнение внутри:
-### docker exec -it car_parts_db psql -U myuser -d parts_catalog -f /tmp/setup.sql
-# ДЛЯ ПРОВЕРКИ ЧТО ВСЁ СОЗДАЛОСЬ УСПЕШНО: docker exec -it car_parts_db psql -U myuser -d parts_catalog -c "\dt"
+## 📂 Файлы
 
-## Общая команда для входа в БД через терминал:
-### docker exec -it car_parts_db psql -U myuser -d parts_catalog
+| Файл | Что делает |
+|------|-----------|
+| `docker-compose.yml` | Запуск PostgreSQL в Docker |
+| `BD_dead_kolesa_kz.sql` | Схема БД (создание таблицы) |
+| `full_backup.sql` | Дамп БД для синхронизации |
+| `test_bd.py` | CLI-приложение (меню: просмотр, поиск, сортировка, CRUD) |
+| `test.py` | Набор тестов (18 штук) |
+| `dataset.py` | Загрузчик данных из CSV |
+| `sync_push.sh` / `sync_pull.sh` | Синхронизация через Git |
+| `sync_status.sh` | Проверка статуса БД и Git |
+| `apply_migrations.sh` | Применение миграций схемы |
+| `migrations/` | SQL-файлы изменений схемы |
 
-# ПЕРЕД КАЖДЫМ КОММИТОМ ДЕЛАТЬ ЭТО:
+---
 
-### docker exec -t car_parts_db pg_dump -U myuser parts_catalog > full_backup.sql
+## 🔧 Вход в БД
 
-# ДЛЯ ЭТОГО
-## Напарник: делает pg_dump в файл full_backup.sql и пушит его в Git.
-## Ты: делаешь git pull. Твой файл full_backup.sql на компьютере обновился.
-## Ты: теперь тебе нужно "накатить" (импортировать) этот файл в свой локальный Docker.
-## Команда для тебя (обновление твоей базы):
-## Bash
-## docker exec -i car_parts_db psql -U myuser -d parts_catalog < full_backup.sql
+```bash
+docker exec -it car_parts_db psql -U myuser -d parts_catalog
+```

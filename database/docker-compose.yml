@@ -1,19 +1,22 @@
 version: '3.8'
+
+# Загружает переменные из файла .env
+# Если .env не существует — использует значения по умолчанию
 services:
   db:
     image: postgres:15
-    container_name: car_parts_db
+    container_name: ${CONTAINER_NAME:-car_parts_db}
     restart: always
     environment:
-      POSTGRES_USER: myuser
-      POSTGRES_PASSWORD: mypassword
-      POSTGRES_DB: parts_catalog
+      POSTGRES_USER: ${POSTGRES_USER:-myuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mypassword}
+      POSTGRES_DB: ${POSTGRES_DB:-parts_catalog}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U myuser -d parts_catalog"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-myuser} -d ${POSTGRES_DB:-parts_catalog}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -21,35 +24,3 @@ services:
 
 volumes:
   pgdata:
-
-### ============================================
-### ЗАПУСК
-### ============================================
-### docker-compose up -d
-###
-### Проверка здоровья контейнера:
-### docker inspect --format='{{.State.Health.Status}}' car_parts_db
-###
-### ============================================
-### ИНИЦИАЛИЗАЦИЯ БД (первый запуск)
-### ============================================
-### docker cp BD_dead_kolesa_kz.sql car_parts_db:/tmp/setup.sql
-### docker exec -it car_parts_db psql -U myuser -d parts_catalog -f /tmp/setup.sql
-###
-### Проверка таблиц:
-### docker exec -it car_parts_db psql -U myuser -d parts_catalog -c "\dt"
-###
-### ============================================
-### СИНХРОНИЗАЦИЯ ЧЕРЕЗ GITHUB
-### ============================================
-### Отправить изменения:
-###   cd database/ && ./sync_push.sh "коммит"
-###
-### Получить изменения:
-###   cd database/ && ./sync_pull.sh
-###
-### Подробнее: SYNC_README.md
-### ============================================
-
-# Вход в БД:
-# docker exec -it car_parts_db psql -U myuser -d parts_catalog
