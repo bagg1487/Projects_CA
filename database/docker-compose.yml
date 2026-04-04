@@ -11,6 +11,10 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-myuser}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mypassword}
       POSTGRES_DB: ${POSTGRES_DB:-parts_catalog}
+      # Кодировка UTF-8 для корректной работы с кириллицей
+      LC_ALL: C.UTF-8
+      LANG: C.UTF-8
+      LANGUAGE: C.UTF-8
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
