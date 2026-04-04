@@ -45,6 +45,24 @@ docker exec -it car_parts_db psql -U myuser -d parts_catalog -c "\dt"
 
 ---
 
+## 💾 Ручной дамп и восстановление
+
+### Экспорт БД → файл
+
+```bash
+cd database/
+docker exec -t car_parts_db pg_dump -U myuser -d parts_catalog \
+  --no-owner --no-privileges > full_backup.sql
+```
+
+### Импорт файла → БД
+
+```bash
+docker exec -i car_parts_db psql -U myuser -d parts_catalog < full_backup.sql
+```
+
+---
+
 ## 🔄 Синхронизация между устройствами
 
 Команда из 4 человек работает через GitHub. Один делает изменения → остальные получают.
@@ -102,6 +120,7 @@ python test.py
 | `test_bd.py` | CLI-приложение (меню: просмотр, поиск, сортировка, CRUD) |
 | `test.py` | Набор тестов (18 штук) |
 | `dataset.py` | Загрузчик данных из CSV |
+| `add_lexus_parts.py` | Скрипт: добавить 10 записей Lexus IS250 |
 | `sync_push.sh` / `sync_pull.sh` | Синхронизация через Git |
 | `sync_status.sh` | Проверка статуса БД и Git |
 | `apply_migrations.sh` | Применение миграций схемы |
