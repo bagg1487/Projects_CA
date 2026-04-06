@@ -1,4 +1,4 @@
-from utils.algorithms import mergesort # Теперь импорт локальный и стабильный
+from utils.algorithms import mergesort
 
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
     QTableView, QTabWidget, QAbstractItemView,
     QDialog, QMessageBox, QLabel, QScrollArea, QFrame
 )
-from PyQt6.QtCore import Qt, QSortFilterProxyModel, QPropertyAnimation, QEasingCurve, pyqtProperty
+from PyQt6.QtCore import Qt, QSortFilterProxyModel, QVariantAnimation, QEasingCurve
 from PyQt6.QtGui import (
     QColor, QPainter, QPen, QBrush, QFont,
     QStandardItemModel, QStandardItem
@@ -24,24 +24,22 @@ class ThemeToggle(QPushButton):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._dark = False
+        self._dark    = False
         self._thumb_x = 4
         self.setFixedSize(140, 36)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setCheckable(True)
-        self._anim = QPropertyAnimation(self, b"thumb_x", self)
+
+        self._anim = QVariantAnimation(self)
         self._anim.setDuration(220)
         self._anim.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        self._anim.valueChanged.connect(self._on_anim_value)
+
         self.toggled.connect(self._on_toggle)
 
-    def get_thumb_x(self):
-        return self._thumb_x
-
-    def set_thumb_x(self, val):
-        self._thumb_x = val
+    def _on_anim_value(self, value):
+        self._thumb_x = int(value)
         self.update()
-
-    thumb_x = pyqtProperty(int, fget=get_thumb_x, fset=set_thumb_x)
 
     def _on_toggle(self, checked: bool):
         self._dark = checked
@@ -74,11 +72,14 @@ class ThemeToggle(QPushButton):
         p.drawEllipse(self._thumb_x, 4, thumb_size, thumb_size)
         p.end()
 
+
 class MergeSortProxyModel(QSortFilterProxyModel):
     def sort(self, column: int, order: Qt.SortOrder):
-        if column < 0: return
+        if column < 0:
+            return
         source_model = self.sourceModel()
-        if not source_model: return
+        if not source_model:
+            return
 
         rows_data = []
         for i in range(source_model.rowCount()):
@@ -89,9 +90,8 @@ class MergeSortProxyModel(QSortFilterProxyModel):
             text = row[column].text().strip()
             if not text:
                 return (2, "")
-
             try:
-                val = float(text.replace(' ', '').replace('₽', '').replace(',', '.'))
+                val = float(text.replace(' ', '').replace('₽', '').replace(',', '.').replace('₸', ''))
                 return (0, val)
             except ValueError:
                 return (1, text.lower())
@@ -102,6 +102,7 @@ class MergeSortProxyModel(QSortFilterProxyModel):
         source_model.setRowCount(0)
         for row in sorted_data:
             source_model.appendRow(row)
+
 
 class MainWindow(QMainWindow):
 
@@ -176,9 +177,9 @@ class MainWindow(QMainWindow):
 
     def _buildButtonPanel(self) -> QHBoxLayout:
         layout = QHBoxLayout()
-        self.addBtn    = QPushButton('➕  Добавить', self)
-        self.editBtn   = QPushButton('✏️  Редактировать', self)
-        self.deleteBtn = QPushButton('🗑  Удалить', self)
+        self.addBtn     = QPushButton('➕  Добавить', self)
+        self.editBtn    = QPushButton('✏️  Редактировать', self)
+        self.deleteBtn  = QPushButton('🗑  Удалить', self)
         self.deleteBtn.setObjectName('deleteBtn')
         self.refreshBtn = QPushButton('🔄  Обновить', self)
         for btn in (self.addBtn, self.editBtn, self.deleteBtn, self.refreshBtn):
@@ -256,7 +257,7 @@ class MainWindow(QMainWindow):
         self.addBtn.clicked.connect(self.addPart)
         self.editBtn.clicked.connect(self.editPart)
         self.deleteBtn.clicked.connect(self.deletePart)
-        self.refreshBtn.clicked.connect(self.refreshData)
+        self.refreshBtn.clicked.connect(self._hardRefresh)
         self.catalogTable.clicked.connect(self._onCatalogCellClick)
         self.inventoryTable.clicked.connect(self._onInventoryCellClick)
 
@@ -268,6 +269,11 @@ class MainWindow(QMainWindow):
                 self.locationFilter.addItem(loc)
         except Exception as e:
             QMessageBox.critical(self, 'Ошибка', f'Не удалось загрузить фильтры:\n{e}')
+
+    def _hardRefresh(self):
+        self.controller.invalidate()
+        self.cardView.clear_image_cache()
+        self.refreshData()
 
     def refreshData(self):
         self._loadCatalog()
