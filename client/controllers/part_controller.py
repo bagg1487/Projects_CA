@@ -130,3 +130,14 @@ class PartController:
 
     def get_part(self, part_id: int) -> Optional[Part]:
         return self.db.get_part_by_id(part_id)
+
+    def update_part_fields(self, part_id: int, fields: dict) -> bool:
+        """Обновляет только указанные поля (photo_url, shop_url и т.д.)"""
+        try:
+            allowed = {'photo_url', 'shop_url', 'price', 'quantity', 'condition', 'part_name', 'oem_number'}
+            update_data = {k: v for k, v in fields.items() if k in allowed}
+            if not update_data:
+                return True
+            return self.db.update_part(part_id, update_data)
+        except Exception as e:
+            raise Exception(f"Ошибка при обновлении: {e}")

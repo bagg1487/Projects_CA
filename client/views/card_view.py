@@ -2,14 +2,14 @@ from PyQt6 import sip
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QPushButton, QScrollArea, QFrame,
-    QComboBox, QSizePolicy, QApplication
+    QComboBox, QSizePolicy
 )
-from PyQt6.QtCore import Qt, QUrl, pyqtSignal, QObject, QTimer
-from PyQt6.QtGui import QPixmap, QColor, QFont, QPainter, QBrush
+from PyQt6.QtCore import Qt, QUrl, pyqtSignal, QObject, QTimer, QSize
+from PyQt6.QtGui import QPixmap, QColor, QFont, QPainter
 from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from typing import List, Dict, Optional
 from models import Part
-from views.dialogs import open_url
+from utils.platform import open_url_crossplatform
 from utils.algorithms import mergesort
 
 
@@ -27,6 +27,17 @@ CARD_W   = 220
 CARD_IMG = (220, 160)
 COLS     = 4
 BATCH    = 20
+
+
+def make_cover_pixmap(pix: QPixmap, target_size: QSize) -> QPixmap:
+    """Масштабирует pix с сохранением пропорций и обрезает до target_size (Cover)."""
+    if pix.isNull():
+        return pix
+    scaled = pix.scaled(target_size, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                        Qt.TransformationMode.SmoothTransformation)
+    x = (scaled.width() - target_size.width()) // 2
+    y = (scaled.height() - target_size.height()) // 2
+    return scaled.copy(x, y, target_size.width(), target_size.height())
 
 
 def _placeholder(w: int, h: int, dark: bool) -> QPixmap:
@@ -78,14 +89,13 @@ class ImageCache(QObject):
             self._pending.pop(url, None)
             return
 
-        scaled = pix.scaled(*CARD_IMG,
-                             Qt.AspectRatioMode.KeepAspectRatio,
-                             Qt.TransformationMode.SmoothTransformation)
-        self._cache[url] = scaled
+        target_size = QSize(*CARD_IMG)
+        scaled_cover = make_cover_pixmap(pix, target_size)
+        self._cache[url] = scaled_cover
 
         for label in self._pending.pop(url, []):
             if not sip.isdeleted(label):
-                self._apply(label, scaled)
+                self._apply(label, scaled_cover)
 
     @staticmethod
     def _apply(label: QLabel, pix: QPixmap) -> None:
@@ -94,9 +104,6 @@ class ImageCache(QObject):
 
     def clear(self) -> None:
         self._cache.clear()
-
-    def has(self, url: str) -> bool:
-        return url in self._cache
 
     def get(self, url: str) -> Optional[QPixmap]:
         return self._cache.get(url)
@@ -203,7 +210,7 @@ class PartCard(QFrame):
         if self.part.shop_url:
             shop_btn = QPushButton("🔗 Магазин")
             shop_btn.setProperty("cardBtn", True)
-            shop_btn.clicked.connect(lambda: open_url(self.part.shop_url))
+            shop_btn.clicked.connect(lambda: open_url_crossplatform(self.part.shop_url))
             btn_row.addWidget(shop_btn)
 
         edit_btn = QPushButton("✏")

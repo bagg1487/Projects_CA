@@ -179,26 +179,23 @@ class Database:
 
     def update_part(self, part_id: int, data: Dict[str, Any]) -> bool:
         with self.get_cursor() as cur:
-            query = """
-                UPDATE parts_inventory SET
-                    oem_number = %s, part_name = %s, photo_url = %s,
-                    brand = %s, model = %s, body_code = %s,
-                    year_start = %s, year_end = %s,
-                    address = %s, store_name = %s, phone = %s, shop_url = %s,
-                    quantity = %s, price = %s, condition = %s,
-                    updated_at = NOW()
-                WHERE id = %s
-                RETURNING id
-            """
-            cur.execute(query, (
-                data['oem_number'], data['part_name'], data.get('photo_url'),
-                data.get('brand'), data.get('model'), data.get('body_code'),
-                data.get('year_start'), data.get('year_end'),
-                data.get('address'), data.get('store_name'), data.get('phone'),
-                data.get('shop_url'),
-                data['quantity'], data['price'], data['condition'],
-                part_id
-            ))
+            allowed_fields = [
+                'oem_number', 'part_name', 'photo_url', 'brand', 'model', 'body_code',
+                'year_start', 'year_end', 'address', 'store_name', 'phone', 'shop_url',
+                'quantity', 'price', 'condition'
+            ]
+            set_clauses = []
+            values = []
+            for field in allowed_fields:
+                if field in data:
+                    set_clauses.append(f"{field} = %s")
+                    values.append(data[field])
+            if not set_clauses:
+                return True
+            set_clauses.append("updated_at = NOW()")
+            query = f"UPDATE parts_inventory SET {', '.join(set_clauses)} WHERE id = %s RETURNING id"
+            values.append(part_id)
+            cur.execute(query, values)
             return cur.fetchone() is not None
 
     def delete_part(self, part_id: int) -> bool:

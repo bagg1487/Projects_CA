@@ -1,76 +1,22 @@
-from utils.algorithms import mergesort
-
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QComboBox, QCheckBox, QPushButton,
     QTableView, QTabWidget, QAbstractItemView,
-    QDialog, QMessageBox, QLabel, QScrollArea, QFrame
+    QDialog, QMessageBox, QLabel, QProgressBar, QStatusBar
 )
-from PyQt6.QtCore import Qt, QSortFilterProxyModel, QVariantAnimation, QEasingCurve
-from PyQt6.QtGui import (
-    QColor, QPainter, QPen, QBrush, QFont,
-    QStandardItemModel, QStandardItem
-)
-from typing import List
+from PyQt6.QtCore import Qt, QSortFilterProxyModel
+from PyQt6.QtGui import QColor, QStandardItemModel, QStandardItem
+from typing import List, Optional
 
 from models import Part
 from controllers.part_controller import PartController
-from views.dialogs import PartDialog, open_url
+from views.dialogs import PartDialog
 from views.card_view import CardView
 from utils.theme import ThemeManager
-
-
-class ThemeToggle(QPushButton):
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._dark    = False
-        self._thumb_x = 4
-        self.setFixedSize(140, 36)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setCheckable(True)
-
-        self._anim = QVariantAnimation(self)
-        self._anim.setDuration(220)
-        self._anim.setEasingCurve(QEasingCurve.Type.InOutCubic)
-        self._anim.valueChanged.connect(self._on_anim_value)
-
-        self.toggled.connect(self._on_toggle)
-
-    def _on_anim_value(self, value):
-        self._thumb_x = int(value)
-        self.update()
-
-    def _on_toggle(self, checked: bool):
-        self._dark = checked
-        self._anim.stop()
-        self._anim.setStartValue(self._thumb_x)
-        self._anim.setEndValue(100 if checked else 4)
-        self._anim.start()
-
-    def paintEvent(self, event):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        w, h = self.width(), self.height()
-        r = h // 2
-        track_col = QColor('#1c7ed6') if self._dark else QColor('#dee2e6')
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QBrush(track_col))
-        p.drawRoundedRect(0, 0, w, h, r, r)
-        p.setPen(QPen(QColor('#ffffff' if self._dark else '#495057')))
-        f = QFont()
-        f.setPointSize(9)
-        f.setBold(True)
-        p.setFont(f)
-        if self._dark:
-            p.drawText(8, 0, 80, h, Qt.AlignmentFlag.AlignVCenter, '☀  Светлая')
-        else:
-            p.drawText(38, 0, 90, h, Qt.AlignmentFlag.AlignVCenter, '🌙  Тёмная')
-        thumb_size = h - 8
-        p.setBrush(QBrush(QColor('#ffffff') if self._dark else QColor('#339af0')))
-        p.setPen(Qt.PenStyle.NoPen)
-        p.drawEllipse(self._thumb_x, 4, thumb_size, thumb_size)
-        p.end()
+from utils.algorithms import mergesort
+from utils.platform import open_url_crossplatform
+from workers.data_worker import DataLoadWorker
+from workers.update_worker import UpdateWorker
 
 
 class MergeSortProxyModel(QSortFilterProxyModel):
@@ -105,7 +51,6 @@ class MergeSortProxyModel(QSortFilterProxyModel):
 
 
 class MainWindow(QMainWindow):
-
     CAT_COLS = ['OEM-номер', 'Наименование', 'Марка/Модель', 'Годы', 'Фото', 'Магазин', '_id']
     INV_COLS = ['Деталь', 'OEM', 'Марка/Модель', 'Цена', 'Количество',
                 'Состояние', 'Магазин', 'Адрес', 'Ссылка']
@@ -116,6 +61,9 @@ class MainWindow(QMainWindow):
         self.theme_manager = ThemeManager()
         self._dark = False
         self._current_parts: List[Part] = []
+
+        self.data_worker = None
+        self.update_worker = None
 
         self.setupUI()
         self.setupModels()
@@ -144,6 +92,12 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(central)
 
+        self.statusBar = QStatusBar(self)
+        self.setStatusBar(self.statusBar)
+        self.progressBar = QProgressBar(self)
+        self.progressBar.setVisible(False)
+        self.statusBar.addPermanentWidget(self.progressBar)
+
     def _buildFilterPanel(self) -> QHBoxLayout:
         layout = QHBoxLayout()
         layout.setSpacing(8)
@@ -164,7 +118,10 @@ class MainWindow(QMainWindow):
         self.locationFilter.setMinimumWidth(140)
 
         self.inStockCheckbox = QCheckBox('Только в наличии', self)
-        self.themeToggle = ThemeToggle(self)
+
+        self.themeToggle = QPushButton("🌙 Тёмная тема")
+        self.themeToggle.setCheckable(True)
+        self.themeToggle.toggled.connect(self._onThemeToggled)
 
         layout.addWidget(self.searchEdit)
         layout.addWidget(self.brandFilter)
@@ -177,12 +134,14 @@ class MainWindow(QMainWindow):
 
     def _buildButtonPanel(self) -> QHBoxLayout:
         layout = QHBoxLayout()
-        self.addBtn     = QPushButton('➕  Добавить', self)
-        self.editBtn    = QPushButton('✏️  Редактировать', self)
-        self.deleteBtn  = QPushButton('🗑  Удалить', self)
+        self.addBtn = QPushButton('➕  Добавить', self)
+        self.editBtn = QPushButton('✏️  Редактировать', self)
+        self.deleteBtn = QPushButton('🗑  Удалить', self)
         self.deleteBtn.setObjectName('deleteBtn')
         self.refreshBtn = QPushButton('🔄  Обновить', self)
-        for btn in (self.addBtn, self.editBtn, self.deleteBtn, self.refreshBtn):
+        self.fillMissingBtn = QPushButton('🔍  Заполнить картинки/ссылки', self)
+
+        for btn in (self.addBtn, self.editBtn, self.deleteBtn, self.refreshBtn, self.fillMissingBtn):
             layout.addWidget(btn)
         layout.addStretch()
         return layout
@@ -253,11 +212,11 @@ class MainWindow(QMainWindow):
         self.conditionFilter.currentTextChanged.connect(self.refreshData)
         self.locationFilter.currentTextChanged.connect(self.refreshData)
         self.inStockCheckbox.stateChanged.connect(self.refreshData)
-        self.themeToggle.toggled.connect(self._onThemeToggled)
         self.addBtn.clicked.connect(self.addPart)
         self.editBtn.clicked.connect(self.editPart)
         self.deleteBtn.clicked.connect(self.deletePart)
         self.refreshBtn.clicked.connect(self._hardRefresh)
+        self.fillMissingBtn.clicked.connect(self.start_fill_missing)
         self.catalogTable.clicked.connect(self._onCatalogCellClick)
         self.inventoryTable.clicked.connect(self._onInventoryCellClick)
 
@@ -276,62 +235,69 @@ class MainWindow(QMainWindow):
         self.refreshData()
 
     def refreshData(self):
-        self._loadCatalog()
-        self._loadInventory()
+        self.start_load_data()
 
-    def _loadCatalog(self):
-        try:
-            parts = self.controller.get_all_parts(
-                search=self.searchEdit.text(),
-                brand=self.brandFilter.currentText(),
-                condition=self.conditionFilter.currentText(),
-                location=self.locationFilter.currentText(),
-                in_stock_only=self.inStockCheckbox.isChecked()
-            )
-            self._current_parts = parts
+    def start_load_data(self):
+        if self.data_worker and self.data_worker.isRunning():
+            return
+        filters = {
+            'search': self.searchEdit.text(),
+            'brand': self.brandFilter.currentText(),
+            'condition': self.conditionFilter.currentText(),
+            'location': self.locationFilter.currentText(),
+            'in_stock_only': self.inStockCheckbox.isChecked()
+        }
+        self.data_worker = DataLoadWorker(self.controller, filters)
+        self.data_worker.finished.connect(self.on_data_loaded)
+        self.data_worker.error.connect(self.on_data_error)
+        self.statusBar.showMessage("Загрузка данных...")
+        self.data_worker.start()
 
-            self.catalogModel.setRowCount(0)
-            for p in parts:
-                row_items = [
-                    QStandardItem(p.oem_number or ''),
-                    QStandardItem(p.part_name or ''),
-                    QStandardItem(p.car_info),
-                    QStandardItem(p.years_display),
-                    self._link_item(p.photo_url, '🖼 Фото'),
-                    self._link_item(p.shop_url, '🔗 Магазин'),
-                    QStandardItem(str(p.id)),
-                ]
-                self.catalogModel.appendRow(row_items)
+    def on_data_loaded(self, parts, inventory):
+        self._current_parts = parts
+        self._update_catalog_model(parts)
+        self._update_inventory_model(inventory)
+        self.cardView.set_parts(parts)
+        self.statusBar.showMessage(f"Загружено {len(parts)} запчастей", 3000)
 
-            for i in range(len(self.CAT_COLS) - 1):
-                self.catalogTable.resizeColumnToContents(i)
+    def on_data_error(self, err):
+        self.statusBar.showMessage("Ошибка загрузки")
+        QMessageBox.critical(self, 'Ошибка', f'Не удалось загрузить данные:\n{err}')
 
-            self.cardView.set_parts(parts)
+    def _update_catalog_model(self, parts: List[Part]):
+        self.catalogModel.setRowCount(0)
+        for p in parts:
+            row_items = [
+                QStandardItem(p.oem_number or ''),
+                QStandardItem(p.part_name or ''),
+                QStandardItem(p.car_info),
+                QStandardItem(p.years_display),
+                self._link_item(p.photo_url, '🖼 Фото'),
+                self._link_item(p.shop_url, '🔗 Магазин'),
+                QStandardItem(str(p.id)),
+            ]
+            self.catalogModel.appendRow(row_items)
 
-        except Exception as e:
-            QMessageBox.critical(self, 'Ошибка', f'Не удалось загрузить каталог:\n{e}')
+        for i in range(len(self.CAT_COLS) - 1):
+            self.catalogTable.resizeColumnToContents(i)
 
-    def _loadInventory(self):
-        try:
-            items = self.controller.get_inventory()
-            self.inventoryModel.setRowCount(0)
-            for it in items:
-                row_items = [
-                    QStandardItem(it.part_name),
-                    QStandardItem(it.oem_number),
-                    QStandardItem(it.car_model),
-                    QStandardItem(str(it.price)),
-                    QStandardItem(str(it.quantity)),
-                    QStandardItem(it.condition.upper()),
-                    QStandardItem(it.store_name),
-                    QStandardItem(it.address),
-                    self._link_item(it.shop_url, '🔗 Открыть'),
-                ]
-                self.inventoryModel.appendRow(row_items)
-            for i in range(len(self.INV_COLS)):
-                self.inventoryTable.resizeColumnToContents(i)
-        except Exception as e:
-            QMessageBox.critical(self, 'Ошибка', f'Не удалось загрузить инвентарь:\n{e}')
+    def _update_inventory_model(self, inventory):
+        self.inventoryModel.setRowCount(0)
+        for it in inventory:
+            row_items = [
+                QStandardItem(it.part_name),
+                QStandardItem(it.oem_number),
+                QStandardItem(it.car_model),
+                QStandardItem(str(it.price)),
+                QStandardItem(str(it.quantity)),
+                QStandardItem(it.condition.upper()),
+                QStandardItem(it.store_name),
+                QStandardItem(it.address),
+                self._link_item(it.shop_url, '🔗 Открыть'),
+            ]
+            self.inventoryModel.appendRow(row_items)
+        for i in range(len(self.INV_COLS)):
+            self.inventoryTable.resizeColumnToContents(i)
 
     @staticmethod
     def _link_item(url: str | None, label: str) -> QStandardItem:
@@ -350,14 +316,14 @@ class MainWindow(QMainWindow):
             src = self.catalogProxy.mapToSource(proxy_index)
             url = self.catalogModel.itemFromIndex(src).data(Qt.ItemDataRole.UserRole)
             if url:
-                open_url(url)
+                open_url_crossplatform(url)
 
     def _onInventoryCellClick(self, proxy_index):
         if proxy_index.column() == 8:
             src = self.inventoryProxy.mapToSource(proxy_index)
             url = self.inventoryModel.itemFromIndex(src).data(Qt.ItemDataRole.UserRole)
             if url:
-                open_url(url)
+                open_url_crossplatform(url)
 
     def addPart(self):
         dialog = PartDialog(self)
@@ -419,18 +385,52 @@ class MainWindow(QMainWindow):
         if not selected:
             return None
         id_proxy = self.catalogProxy.index(selected[0].row(), len(self.CAT_COLS) - 1)
-        id_src   = self.catalogProxy.mapToSource(id_proxy)
-        item     = self.catalogModel.itemFromIndex(id_src)
+        id_src = self.catalogProxy.mapToSource(id_proxy)
+        item = self.catalogModel.itemFromIndex(id_src)
         if item and item.text():
             return int(item.text())
         return None
+
+    def start_fill_missing(self):
+        if self.update_worker and self.update_worker.isRunning():
+            QMessageBox.information(self, "Информация", "Обновление уже выполняется.")
+            return
+        self.fillMissingBtn.setEnabled(False)
+        self.progressBar.setVisible(True)
+        self.progressBar.setValue(0)
+        self.statusBar.showMessage("Поиск картинок и ссылок...")
+        self.update_worker = UpdateWorker(self.controller)
+        self.update_worker.progress.connect(self.on_update_progress)
+        self.update_worker.finished.connect(self.on_update_finished)
+        self.update_worker.error.connect(self.on_update_error)
+        self.update_worker.start()
+
+    def on_update_progress(self, current, total):
+        self.progressBar.setMaximum(total)
+        self.progressBar.setValue(current)
+        self.statusBar.showMessage(f"Обработано {current} из {total}")
+
+    def on_update_finished(self):
+        self.fillMissingBtn.setEnabled(True)
+        self.progressBar.setVisible(False)
+        self.statusBar.showMessage("Готово! Обновляю данные...")
+        self.refreshData()
+        QMessageBox.information(self, "Готово", "Недостающие картинки и ссылки добавлены.")
+
+    def on_update_error(self, err):
+        self.fillMissingBtn.setEnabled(True)
+        self.progressBar.setVisible(False)
+        self.statusBar.showMessage("Ошибка")
+        QMessageBox.critical(self, "Ошибка", f"Не удалось завершить обновление:\n{err}")
 
     def _onThemeToggled(self, dark: bool):
         self._dark = dark
         if dark:
             self.applyDarkTheme()
+            self.themeToggle.setText("☀️ Светлая тема")
         else:
             self.applyLightTheme()
+            self.themeToggle.setText("🌙 Тёмная тема")
         self.cardView.set_dark(dark)
 
     def applyLightTheme(self):

@@ -9,6 +9,7 @@ from PyQt6.QtGui import QDesktopServices, QPixmap
 from typing import Dict, Any, Optional
 from models import Part
 import subprocess
+from utils.platform import open_url_crossplatform
 import sys
 
 
@@ -147,14 +148,14 @@ class PartDialog(QDialog):
     def _open_shop_url(self):
         url = self.shopUrlEdit.text().strip()
         if url:
-            open_url(url)
+            open_url_crossplatform(url)
         else:
             QMessageBox.information(self, 'Нет ссылки', 'Введите ссылку на магазин.')
 
     def _open_photo(self):
         url = self.photoEdit.text().strip()
         if url:
-            open_url(url)
+            open_url_crossplatform(url)
         else:
             QMessageBox.information(self, 'Нет фото', 'Введите URL изображения.')
 
