@@ -1,11 +1,11 @@
-from PyQt6.QtWidgets import (
+from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLineEdit, QDoubleSpinBox, QSpinBox, QComboBox,
     QDialogButtonBox, QLabel, QScrollArea, QWidget,
     QPushButton, QMessageBox
 )
-from PyQt6.QtCore import Qt, QUrl
-from PyQt6.QtGui import QDesktopServices, QPixmap
+from PyQt5.QtCore import Qt, QUrl
+from PyQt5.QtGui import QDesktopServices, QPixmap
 from typing import Dict, Any, Optional
 from models import Part
 import subprocess

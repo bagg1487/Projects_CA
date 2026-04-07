@@ -1,4 +1,4 @@
-from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt5.QtCore import QThread, pyqtSignal
 from controllers.part_controller import PartController
 from utils.drom_parser import DromParser
 import traceback

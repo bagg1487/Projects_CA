@@ -1,12 +1,12 @@
-from PyQt6 import sip
-from PyQt6.QtWidgets import (
+from PyQt5 import sip
+from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QPushButton, QScrollArea, QFrame,
     QComboBox, QSizePolicy
 )
-from PyQt6.QtCore import Qt, QUrl, pyqtSignal, QObject, QTimer, QRect, QThread
-from PyQt6.QtGui import QPixmap, QColor, QFont, QPainter, QPainterPath
-from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
+from PyQt5.QtCore import Qt, QUrl, pyqtSignal, QObject, QTimer, QRect, QThread
+from PyQt5.QtGui import QPixmap, QColor, QFont, QPainter, QPainterPath
+from PyQt5.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from typing import List, Dict, Optional
 from models import Part
 from utils.platform import open_url_crossplatform

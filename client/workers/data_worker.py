@@ -1,4 +1,4 @@
-from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt5.QtCore import QThread, pyqtSignal
 from typing import List, Optional
 from models import Part, InventoryItem
 from controllers.part_controller import PartController

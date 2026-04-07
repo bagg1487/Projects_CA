@@ -1,11 +1,11 @@
-from PyQt6.QtWidgets import (
+from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QComboBox, QCheckBox, QPushButton,
     QTableView, QTabWidget, QAbstractItemView,
     QDialog, QMessageBox, QLabel, QProgressBar, QStatusBar
 )
-from PyQt6.QtCore import Qt, QSortFilterProxyModel
-from PyQt6.QtGui import QColor, QStandardItemModel, QStandardItem
+from PyQt5.QtCore import Qt, QSortFilterProxyModel
+from PyQt5.QtGui import QColor, QStandardItemModel, QStandardItem
 from typing import List, Optional
 
 from models import Part

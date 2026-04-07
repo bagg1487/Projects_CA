@@ -2,9 +2,9 @@ import hashlib
 import os
 from pathlib import Path
 from typing import Optional
-from PyQt6.QtGui import QPixmap
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QPainter, QPainterPath
+from PyQt5.QtGui import QPixmap
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QPainter, QPainterPath
 
 
 CACHE_DIR = Path(__file__).parent.parent / "cache" / "images"
