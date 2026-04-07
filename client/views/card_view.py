@@ -2,15 +2,18 @@ from PyQt6 import sip
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QPushButton, QScrollArea, QFrame,
-    QComboBox, QSizePolicy, QApplication
+    QComboBox, QSizePolicy
 )
-from PyQt6.QtCore import Qt, QUrl, pyqtSignal, QObject, QTimer, QSize, QRect
-from PyQt6.QtGui import QPixmap, QColor, QFont, QPainter, QPainterPath, QBrush
+from PyQt6.QtCore import Qt, QUrl, pyqtSignal, QObject, QTimer, QRect, QThread
+from PyQt6.QtGui import QPixmap, QColor, QFont, QPainter, QPainterPath
 from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from typing import List, Dict, Optional
 from models import Part
 from utils.platform import open_url_crossplatform
 from utils.algorithms import mergesort
+from utils.image_disk_cache import (
+    load_from_disk, save_to_disk, make_rounded, clear_disk_cache, RADIUS
+)
 
 
 SORT_OPTIONS = [
@@ -23,49 +26,22 @@ SORT_OPTIONS = [
     ("Новинки",              "id",        True),
 ]
 
-CARD_MIN_W  = 180
-CARD_MAX_W  = 280
+CARD_MIN_W   = 180
+CARD_MAX_W   = 280
 CARD_SPACING = 16
-IMG_RATIO   = 0.72
-BATCH       = 24
-RADIUS      = 10
-
-
-def _make_rounded_pixmap(pix: QPixmap, w: int, h: int, radius: int) -> QPixmap:
-    scaled = pix.scaled(
-        w, h,
-        Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-        Qt.TransformationMode.SmoothTransformation
-    )
-    # Исправлено: вычитание 2 было лишним
-    x = (scaled.width() - w) // 2
-    y = (scaled.height() - h) // 2
-    cropped = scaled.copy(x, y, w, h)  # Убрано -2
-
-    result = QPixmap(w, h)
-    result.fill(Qt.GlobalColor.transparent)
-
-    p = QPainter(result)
-    p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    path = QPainterPath()
-    path.addRoundedRect(0, 0, w, h, radius, radius)
-    p.setClipPath(path)
-    p.drawPixmap(0, 0, cropped)
-    p.end()
-    return result
+IMG_RATIO    = 0.72
+BATCH        = 24
 
 
 def _placeholder(w: int, h: int, radius: int, dark: bool) -> QPixmap:
     result = QPixmap(w, h)
     result.fill(Qt.GlobalColor.transparent)
-
     p = QPainter(result)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     path = QPainterPath()
     path.addRoundedRect(0, 0, w, h, radius, radius)
     p.setClipPath(path)
     p.fillRect(0, 0, w, h, QColor('#2a2b30' if dark else '#f1f3f5'))
-
     p.setPen(QColor('#5c5f66' if dark else '#adb5bd'))
     f = QFont(); f.setPointSize(28); p.setFont(f)
     p.drawText(QRect(0, 0, w, h), Qt.AlignmentFlag.AlignCenter, '📷')
@@ -73,84 +49,112 @@ def _placeholder(w: int, h: int, radius: int, dark: bool) -> QPixmap:
     return result
 
 
-class ImageCache(QObject):
-    def __init__(self):
-        super().__init__()
-        self._manager = QNetworkAccessManager()
-        self._cache: Dict[str, QPixmap] = {}
-        self._pending: Dict[str, list] = {}
-        self._in_flight: Dict[int, str] = {}
-        self._manager.finished.connect(self._on_finished)
-
-    def request(self, url: str, label: QLabel, w: int, h: int, radius: int) -> None:
-        if not url:  # Проверка на пустой URL
-            return
-
-        key = f"{url}|{w}x{h}r{radius}"
-
-        if key in self._cache:
-            _apply(label, self._cache[key])
-            return
-
-        if key in self._pending:
-            self._pending[key].append((label, w, h, radius))
-            return
-
-        self._pending[key] = [(label, w, h, radius)]
-
-        # Добавлены заголовки для некоторых серверов
-        req = QNetworkRequest(QUrl(url))
-        req.setHeader(QNetworkRequest.KnownHeaders.UserAgentHeader,
-                      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-
-        reply = self._manager.get(req)
-        self._in_flight[id(reply)] = key
-
-    def _on_finished(self, reply: QNetworkReply) -> None:
-        key = self._in_flight.pop(id(reply), None)
-        if key is None:
-            reply.deleteLater()
-            return
-
-        waiters = self._pending.pop(key, [])
-
-        if reply.error() == QNetworkReply.NetworkError.NoError:
-            data = reply.readAll()
-            raw = QPixmap()
-
-            if raw.loadFromData(data):
-                # Сохраняем оригинал
-                self._cache[key] = raw
-
-                # Отдаем всем ожидающим
-                for (label, w, h, radius) in waiters:
-                    if not sip.isdeleted(label):
-                        rounded = _make_rounded_pixmap(raw, w, h, radius)
-                        cache_key = f"{key}|{w}x{h}r{radius}"
-                        self._cache[cache_key] = rounded
-                        _apply(label, rounded)
-            else:
-                # Логирование ошибки загрузки
-                print(f"Failed to load image from: {key.split('|')[0]}")
-        else:
-            print(f"Network error: {reply.error()} for {key.split('|')[0]}")
-
-        reply.deleteLater()
-
-    def prefetch(self, url: str, w: int, h: int, radius: int) -> Optional[QPixmap]:
-        if not url:
-            return None
-        key = f"{url}|{w}x{h}r{radius}"
-        return self._cache.get(key)
-
-    def clear(self) -> None:
-        self._cache.clear()
-        self._pending.clear()
-
-
 def _apply(label: QLabel, pix: QPixmap) -> None:
     if not sip.isdeleted(label):
         label.setPixmap(pix)
+
+
+class _DiskLoader(QThread):
+    done = pyqtSignal(str, int, int, object)
+
+    def __init__(self, url: str, w: int, h: int, raw: QPixmap):
+        super().__init__()
+        self._url = url
+        self._w   = w
+        self._h   = h
+        self._raw = raw
+
+    def run(self):
+        rounded = make_rounded(self._raw, self._w, self._h, RADIUS)
+        save_to_disk(self._url, self._w, self._h, rounded)
+        self.done.emit(self._url, self._w, self._h, rounded)
+
+
+class ImageCache(QObject):
+    def __init__(self):
+        super().__init__()
+        self._manager    = QNetworkAccessManager()
+        self._mem:       Dict[str, QPixmap] = {}
+        self._pending:   Dict[str, list]    = {}
+        self._in_flight: Dict[int, tuple]   = {}
+        self._workers:   List[_DiskLoader]  = []
+        self._manager.finished.connect(self._on_net_finished)
+
+    def _mem_key(self, url: str, w: int, h: int) -> str:
+        return f"{url}|{w}x{h}"
+
+    def request(self, url: str, label: QLabel, w: int, h: int) -> None:
+        key = self._mem_key(url, w, h)
+
+        if key in self._mem:
+            _apply(label, self._mem[key])
+            return
+
+        disk = load_from_disk(url, w, h)
+        if disk is not None:
+            self._mem[key] = disk
+            _apply(label, disk)
+            return
+
+        if key in self._pending:
+            self._pending[key].append(label)
+            return
+
+        self._pending[key] = [label]
+        req   = QNetworkRequest(QUrl(url))
+        reply = self._manager.get(req)
+        self._in_flight[id(reply)] = (url, w, h)
+        reply.finished.connect(lambda r=reply: self._on_net_finished(r))
+
+    def _on_net_finished(self, reply: QNetworkReply) -> None:
+        info = self._in_flight.pop(id(reply), None)
+        if info is None:
+            reply.deleteLater()
+            return
+
+        url, w, h = info
+        key = self._mem_key(url, w, h)
+        raw = QPixmap()
+        if reply.error() == QNetworkReply.NetworkError.NoError:
+            raw.loadFromData(reply.readAll())
+        reply.deleteLater()
+
+        if raw.isNull():
+            self._pending.pop(key, None)
+            return
+
+        worker = _DiskLoader(url, w, h, raw)
+        worker.done.connect(self._on_disk_saved)
+        self._workers.append(worker)
+        worker.start()
+
+        rounded = make_rounded(raw, w, h, RADIUS)
+        self._mem[key] = rounded
+
+        for label in self._pending.pop(key, []):
+            _apply(label, rounded)
+
+    def _on_disk_saved(self, url: str, w: int, h: int, pix: QPixmap) -> None:
+        key = self._mem_key(url, w, h)
+        self._mem[key] = pix
+        self._workers = [t for t in self._workers if t.isRunning()]
+
+    def prefetch(self, url: str, w: int, h: int) -> Optional[QPixmap]:
+        key = self._mem_key(url, w, h)
+        if key in self._mem:
+            return self._mem[key]
+        disk = load_from_disk(url, w, h)
+        if disk is not None:
+            self._mem[key] = disk
+            return disk
+        return None
+
+    def clear_mem(self) -> None:
+        self._mem.clear()
+
+    def clear_all(self) -> int:
+        self._mem.clear()
+        return clear_disk_cache()
 
 
 _image_cache = ImageCache()
@@ -161,12 +165,15 @@ def get_image_cache() -> ImageCache:
 
 
 class PartCard(QFrame):
+    edit_requested   = pyqtSignal(int)
+    delete_requested = pyqtSignal(int)
+
     def __init__(self, part: Part, card_w: int, dark: bool = False, parent=None):
         super().__init__(parent)
-        self.part = part
-        self.dark = dark
+        self.part   = part
+        self.dark   = dark
         self.card_w = card_w
-        self.img_h = int(card_w * IMG_RATIO)
+        self.img_h  = int(card_w * IMG_RATIO)
         self._build()
         self._style()
 
@@ -183,19 +190,15 @@ class PartCard(QFrame):
         self.imgLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.imgLabel.setScaledContents(False)
 
-        url = self.part.photo_url
+        url   = self.part.photo_url
         cache = get_image_cache()
-
-        if url and url.strip():  # Проверка что URL не пустой
-            cached = cache.prefetch(url, self.card_w, self.img_h, RADIUS)
+        if url:
+            cached = cache.prefetch(url, self.card_w, self.img_h)
             if cached:
                 self.imgLabel.setPixmap(cached)
             else:
-                # Устанавливаем плейсхолдер
-                placeholder = _placeholder(self.card_w, self.img_h, RADIUS, self.dark)
-                self.imgLabel.setPixmap(placeholder)
-                # Запрашиваем загрузку
-                cache.request(url, self.imgLabel, self.card_w, self.img_h, RADIUS)
+                self.imgLabel.setPixmap(_placeholder(self.card_w, self.img_h, RADIUS, self.dark))
+                cache.request(url, self.imgLabel, self.card_w, self.img_h)
         else:
             self.imgLabel.setPixmap(_placeholder(self.card_w, self.img_h, RADIUS, self.dark))
 
@@ -278,18 +281,17 @@ class PartCard(QFrame):
         root.addLayout(body)
 
     def _style(self):
+        r = RADIUS
         if self.dark:
             self.setStyleSheet(
-                "PartCard{background-color:#25262b;border:1px solid #373a40;"
-                f"border-radius:{RADIUS}px;}}"
-                "PartCard:hover{border:1px solid #1c7ed6;}"
+                f"PartCard{{background-color:#25262b;border:1px solid #373a40;border-radius:{r}px;}}"
+                f"PartCard:hover{{border:1px solid #1c7ed6;}}"
                 "QPushButton[cardBtn=true]{padding:5px 8px;font-size:11px;}"
             )
         else:
             self.setStyleSheet(
-                "PartCard{background-color:#ffffff;border:1px solid #e9ecef;"
-                f"border-radius:{RADIUS}px;}}"
-                "PartCard:hover{border:1px solid #339af0;}"
+                f"PartCard{{background-color:#ffffff;border:1px solid #e9ecef;border-radius:{r}px;}}"
+                f"PartCard:hover{{border:1px solid #339af0;}}"
                 "QPushButton[cardBtn=true]{padding:5px 8px;font-size:11px;}"
             )
 
@@ -372,26 +374,28 @@ class CardView(QWidget):
         available = self._scroll.viewport().width() - 4
         if available < CARD_MIN_W:
             available = self.width() - 20
-
-        cols = max(1, available // (CARD_MIN_W + CARD_SPACING))
-
-        total_spacing = CARD_SPACING * (cols - 1)
-        card_w = (available - total_spacing) // cols
-        card_w = max(CARD_MIN_W, min(CARD_MAX_W, card_w))
-
+        cols     = max(1, available // (CARD_MIN_W + CARD_SPACING))
+        spacing  = CARD_SPACING * (cols - 1)
+        card_w   = (available - spacing) // cols
+        card_w   = max(CARD_MIN_W, min(CARD_MAX_W, card_w))
         return cols, card_w
 
     def set_dark(self, dark: bool):
         self._dark = dark
-        self._full_rerender()
+        self._start_render()
 
     def set_parts(self, parts: List[Part]):
         self._parts = parts
         self._on_sort_changed()
 
     def clear_image_cache(self):
-        get_image_cache().clear()
-        self._full_rerender()
+        get_image_cache().clear_mem()
+        self._start_render()
+
+    def clear_all_cache(self) -> int:
+        n = get_image_cache().clear_all()
+        self._start_render()
+        return n
 
     def _on_sort_changed(self):
         idx = self.sortCombo.currentIndex()
@@ -439,8 +443,5 @@ class CardView(QWidget):
             if w:
                 w.deleteLater()
 
-    def _full_rerender(self):
-        self._start_render()
-
     def refresh(self):
-        self._full_rerender()
+        self._start_render()

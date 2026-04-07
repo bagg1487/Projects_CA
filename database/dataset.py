@@ -78,7 +78,7 @@ def generate_sample_dataset(output_file='auto_parts_sample.csv'):
     ]
     
     data = []
-    for i in range(200):  # Генерируем 200 записей
+    for i in range(100):  # Генерируем 200 записей
         oem, name, price_min, price_max, category = random.choice(parts_data)
         brand = random.choice(brands)
         model = random.choice(models[brand])
