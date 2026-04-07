@@ -37,9 +37,10 @@ def _make_rounded_pixmap(pix: QPixmap, w: int, h: int, radius: int) -> QPixmap:
         Qt.AspectRatioMode.KeepAspectRatioByExpanding,
         Qt.TransformationMode.SmoothTransformation
     )
-    x = (scaled.width()  - w) // 2
+    # Исправлено: вычитание 2 было лишним
+    x = (scaled.width() - w) // 2
     y = (scaled.height() - h) // 2
-    cropped = scaled.copy(x, y, w-2, h)
+    cropped = scaled.copy(x, y, w, h)  # Убрано -2
 
     result = QPixmap(w, h)
     result.fill(Qt.GlobalColor.transparent)
@@ -75,61 +76,76 @@ def _placeholder(w: int, h: int, radius: int, dark: bool) -> QPixmap:
 class ImageCache(QObject):
     def __init__(self):
         super().__init__()
-        self._manager    = QNetworkAccessManager()
-        self._cache:     Dict[str, QPixmap]      = {}
-        self._pending:   Dict[str, list]         = {}
-        self._in_flight: Dict[int, str]          = {}
+        self._manager = QNetworkAccessManager()
+        self._cache: Dict[str, QPixmap] = {}
+        self._pending: Dict[str, list] = {}
+        self._in_flight: Dict[int, str] = {}
         self._manager.finished.connect(self._on_finished)
 
     def request(self, url: str, label: QLabel, w: int, h: int, radius: int) -> None:
+        if not url:  # Проверка на пустой URL
+            return
+
         key = f"{url}|{w}x{h}r{radius}"
+
         if key in self._cache:
             _apply(label, self._cache[key])
             return
+
         if key in self._pending:
             self._pending[key].append((label, w, h, radius))
             return
+
         self._pending[key] = [(label, w, h, radius)]
-        req   = QNetworkRequest(QUrl(url))
+
+        # Добавлены заголовки для некоторых серверов
+        req = QNetworkRequest(QUrl(url))
+        req.setHeader(QNetworkRequest.KnownHeaders.UserAgentHeader,
+                      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+
         reply = self._manager.get(req)
         self._in_flight[id(reply)] = key
-        reply.finished.connect(lambda r=reply: self._on_finished(r))
 
     def _on_finished(self, reply: QNetworkReply) -> None:
         key = self._in_flight.pop(id(reply), None)
         if key is None:
             reply.deleteLater()
             return
-        raw = QPixmap()
-        if reply.error() == QNetworkReply.NetworkError.NoError:
-            raw.loadFromData(reply.readAll())
-        reply.deleteLater()
 
         waiters = self._pending.pop(key, [])
-        if raw.isNull():
-            return
 
-        for (label, w, h, radius) in waiters:
-            sub_key = f"{key}|{w}x{h}r{radius}"
-            if sub_key not in self._cache:
-                self._cache[sub_key] = _make_rounded_pixmap(raw, w, h, radius)
-            if not sip.isdeleted(label):
-                _apply(label, self._cache[sub_key])
+        if reply.error() == QNetworkReply.NetworkError.NoError:
+            data = reply.readAll()
+            raw = QPixmap()
 
-        url_part = key.split('|')[0]
-        self._cache[key] = _make_rounded_pixmap(
-            raw,
-            int(key.split('|')[1].split('x')[0]),
-            int(key.split('|')[1].split('x')[1].split('r')[0]),
-            int(key.split('|')[1].split('r')[1]),
-        ) if '|' in key else raw
+            if raw.loadFromData(data):
+                # Сохраняем оригинал
+                self._cache[key] = raw
+
+                # Отдаем всем ожидающим
+                for (label, w, h, radius) in waiters:
+                    if not sip.isdeleted(label):
+                        rounded = _make_rounded_pixmap(raw, w, h, radius)
+                        cache_key = f"{key}|{w}x{h}r{radius}"
+                        self._cache[cache_key] = rounded
+                        _apply(label, rounded)
+            else:
+                # Логирование ошибки загрузки
+                print(f"Failed to load image from: {key.split('|')[0]}")
+        else:
+            print(f"Network error: {reply.error()} for {key.split('|')[0]}")
+
+        reply.deleteLater()
 
     def prefetch(self, url: str, w: int, h: int, radius: int) -> Optional[QPixmap]:
+        if not url:
+            return None
         key = f"{url}|{w}x{h}r{radius}"
         return self._cache.get(key)
 
     def clear(self) -> None:
         self._cache.clear()
+        self._pending.clear()
 
 
 def _apply(label: QLabel, pix: QPixmap) -> None:
@@ -145,15 +161,12 @@ def get_image_cache() -> ImageCache:
 
 
 class PartCard(QFrame):
-    edit_requested   = pyqtSignal(int)
-    delete_requested = pyqtSignal(int)
-
     def __init__(self, part: Part, card_w: int, dark: bool = False, parent=None):
         super().__init__(parent)
-        self.part   = part
-        self.dark   = dark
+        self.part = part
+        self.dark = dark
         self.card_w = card_w
-        self.img_h  = int(card_w * IMG_RATIO)
+        self.img_h = int(card_w * IMG_RATIO)
         self._build()
         self._style()
 
@@ -170,14 +183,18 @@ class PartCard(QFrame):
         self.imgLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.imgLabel.setScaledContents(False)
 
-        url   = self.part.photo_url
+        url = self.part.photo_url
         cache = get_image_cache()
-        if url:
+
+        if url and url.strip():  # Проверка что URL не пустой
             cached = cache.prefetch(url, self.card_w, self.img_h, RADIUS)
             if cached:
                 self.imgLabel.setPixmap(cached)
             else:
-                self.imgLabel.setPixmap(_placeholder(self.card_w, self.img_h, RADIUS, self.dark))
+                # Устанавливаем плейсхолдер
+                placeholder = _placeholder(self.card_w, self.img_h, RADIUS, self.dark)
+                self.imgLabel.setPixmap(placeholder)
+                # Запрашиваем загрузку
                 cache.request(url, self.imgLabel, self.card_w, self.img_h, RADIUS)
         else:
             self.imgLabel.setPixmap(_placeholder(self.card_w, self.img_h, RADIUS, self.dark))
