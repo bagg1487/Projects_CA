@@ -38,13 +38,15 @@ int main() {
             ImPlot::SetupAxisScale(ImAxis_X1, ImPlotScale_Log10);
             ImPlot::SetupAxisScale(ImAxis_Y1, ImPlotScale_Log10);
 
-            ImPlot::SetNextMarkerStyle(ImPlotMarker_Circle, 4);
+            ImPlot::PushStyleVar(ImPlotStyleVar_Marker, ImPlotMarker_Circle);
+            ImPlot::PushStyleVar(ImPlotStyleVar_MarkerSize, 4);
             ImPlot::PlotLine("Scalar", data.sizes.data(), data.scalar_times.data(), data.sizes.size());
-            ImPlot::PlotScatter("Scalar points", data.sizes.data(), data.scalar_times.data(), data.sizes.size());
+            ImPlot::PopStyleVar(2);
 
-            ImPlot::SetNextMarkerStyle(ImPlotMarker_Square, 4);
+            ImPlot::PushStyleVar(ImPlotStyleVar_Marker, ImPlotMarker_Square);
+            ImPlot::PushStyleVar(ImPlotStyleVar_MarkerSize, 4);
             ImPlot::PlotLine("NEON", data.sizes.data(), data.neon_times.data(), data.sizes.size());
-            ImPlot::PlotScatter("NEON points", data.sizes.data(), data.neon_times.data(), data.sizes.size());
+            ImPlot::PopStyleVar(2);
 
             ImPlot::EndPlot();
         }
