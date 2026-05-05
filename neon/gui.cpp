@@ -36,6 +36,7 @@ int main() {
         if (ImPlot::BeginPlot("Execution Time")) {
             ImPlot::SetupAxes("Array Size", "Time (us)");
             ImPlot::SetupAxisScale(ImAxis_X1, ImPlotScale_Log10);
+            ImPlot::SetupAxisScale(ImAxis_Y1, ImPlotScale_Log10);
 
             ImPlot::PlotLine("Scalar", data.sizes.data(), data.scalar_times.data(), data.sizes.size());
             ImPlot::PlotLine("NEON", data.sizes.data(), data.neon_times.data(), data.sizes.size());
@@ -46,6 +47,7 @@ int main() {
         if (ImPlot::BeginPlot("Speedup")) {
             ImPlot::SetupAxes("Array Size", "Speedup");
             ImPlot::SetupAxisScale(ImAxis_X1, ImPlotScale_Log10);
+            ImPlot::SetupAxisScale(ImAxis_Y1, ImPlotScale_Log10);
 
             ImPlot::PlotLine("Speedup", data.sizes.data(), data.speedups.data(), data.sizes.size());
 
