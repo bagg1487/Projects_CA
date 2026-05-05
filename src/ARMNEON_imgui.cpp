@@ -161,6 +161,28 @@ bool parse_benchmark_csv(const std::string& output, std::vector<BenchmarkPoint>&
     return !points.empty();
 }
 
+double choose_rounded_axis_max(double value) {
+    if (value <= 0.0) {
+        return 1.0;
+    }
+
+    const double magnitude = std::pow(10.0, std::floor(std::log10(value)));
+    const double normalized = value / magnitude;
+
+    double rounded = 1.0;
+    if (normalized <= 1.0) {
+        rounded = 1.0;
+    } else if (normalized <= 2.0) {
+        rounded = 2.0;
+    } else if (normalized <= 5.0) {
+        rounded = 5.0;
+    } else {
+        rounded = 10.0;
+    }
+
+    return rounded * magnitude;
+}
+
 void run_benchmark(AppState& state) {
     int exit_code = 0;
     state.raw_output = run_command_capture(make_run_command(state), exit_code);
@@ -244,11 +266,13 @@ void draw_timing_chart(const std::vector<BenchmarkPoint>& points) {
     const double max_log_x = std::log10(static_cast<double>(points.back().size));
     const double log_range = std::max(0.001, max_log_x - min_log_x);
 
-    double max_y = 0.0;
+    double max_y_seconds = 0.0;
     for (const BenchmarkPoint& point : points) {
-        max_y = std::max(max_y, std::max(point.scalar_time_ms, point.neon_time_ms));
+        max_y_seconds = std::max(
+            max_y_seconds,
+            std::max(point.scalar_time_ms, point.neon_time_ms) / 1000.0);
     }
-    max_y = std::max(0.001, max_y * 1.15);
+    max_y_seconds = choose_rounded_axis_max(std::max(0.001, max_y_seconds * 1.15));
 
     for (int tick = 0; tick <= 5; ++tick) {
         const float t = static_cast<float>(tick) / 5.0f;
@@ -256,12 +280,34 @@ void draw_timing_chart(const std::vector<BenchmarkPoint>& points) {
         draw_list->AddLine(ImVec2(origin.x, y), ImVec2(top_right.x, y), grid, 1.0f);
 
         char label[32];
-        std::snprintf(label, sizeof(label), "%.3f", max_y * t);
+        std::snprintf(label, sizeof(label), "%.4f", max_y_seconds * t);
         draw_list->AddText(ImVec2(canvas_pos.x + 14.0f, y - 8.0f), text, label);
     }
 
     draw_list->AddLine(origin, ImVec2(top_right.x, origin.y), frame, 2.0f);
     draw_list->AddLine(origin, ImVec2(origin.x, top_right.y), frame, 2.0f);
+
+    const struct {
+        int exponent;
+        const char* label;
+    } x_ticks[] = {
+        {2, "100"},
+        {3, "1K"},
+        {4, "10K"},
+        {5, "100K"},
+        {6, "1M"},
+    };
+
+    for (const auto& tick : x_ticks) {
+        const float x =
+            origin.x + static_cast<float>((tick.exponent - min_log_x) / log_range) * plot_width;
+
+        if (x >= origin.x && x <= top_right.x) {
+            draw_list->AddLine(ImVec2(x, origin.y), ImVec2(x, top_right.y), grid, 1.0f);
+            draw_list->AddLine(ImVec2(x, origin.y), ImVec2(x, origin.y + 6.0f), frame, 1.0f);
+            draw_list->AddText(ImVec2(x - 14.0f, origin.y + 12.0f), text, tick.label);
+        }
+    }
 
     std::vector<ImVec2> scalar_line;
     std::vector<ImVec2> neon_line;
@@ -273,17 +319,14 @@ void draw_timing_chart(const std::vector<BenchmarkPoint>& points) {
         const float x =
             origin.x + static_cast<float>((log_x - min_log_x) / log_range) * plot_width;
         const float scalar_y =
-            origin.y - static_cast<float>(point.scalar_time_ms / max_y) * plot_height;
+            origin.y -
+            static_cast<float>((point.scalar_time_ms / 1000.0) / max_y_seconds) * plot_height;
         const float neon_y =
-            origin.y - static_cast<float>(point.neon_time_ms / max_y) * plot_height;
+            origin.y -
+            static_cast<float>((point.neon_time_ms / 1000.0) / max_y_seconds) * plot_height;
 
         scalar_line.push_back(ImVec2(x, scalar_y));
         neon_line.push_back(ImVec2(x, neon_y));
-
-        char size_label[32];
-        std::snprintf(size_label, sizeof(size_label), "%zu", point.size);
-        draw_list->AddLine(ImVec2(x, origin.y), ImVec2(x, origin.y + 6.0f), frame, 1.0f);
-        draw_list->AddText(ImVec2(x - 16.0f, origin.y + 12.0f), text, size_label);
     }
 
     if (scalar_line.size() >= 2) {
@@ -321,18 +364,18 @@ void draw_timing_chart(const std::vector<BenchmarkPoint>& points) {
         }
     }
 
-    draw_list->AddText(ImVec2(origin.x - 54.0f, top_right.y - 18.0f), text, "Y: time (ms)");
+    draw_list->AddText(ImVec2(origin.x - 70.0f, top_right.y - 18.0f), text, "Y: time (s)");
     draw_list->AddText(ImVec2(origin.x, canvas_pos.y + 8.0f), scalar_color, "Scalar");
     draw_list->AddText(ImVec2(origin.x + 80.0f, canvas_pos.y + 8.0f), neon_color, "NEON");
     draw_list->AddText(ImVec2(origin.x + plot_width * 0.5f - 44.0f, origin.y + 28.0f), text,
-                       "X: array size");
+                       "X: log10(array size)");
 
     if (hovered_index >= 0 && best_distance <= 12.0f) {
         const BenchmarkPoint& point = points[hovered_index];
         ImGui::BeginTooltip();
         ImGui::Text("Size: %zu", point.size);
-        ImGui::Text("Scalar: %.6f ms", point.scalar_time_ms);
-        ImGui::Text("NEON: %.6f ms", point.neon_time_ms);
+        ImGui::Text("Scalar: %.6f s", point.scalar_time_ms / 1000.0);
+        ImGui::Text("NEON: %.6f s", point.neon_time_ms / 1000.0);
         ImGui::Text("Focus: %s", hovered_scalar ? "Scalar" : "NEON");
         ImGui::Text("Speedup: %.3fx", point.speedup);
         ImGui::EndTooltip();

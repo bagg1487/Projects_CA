@@ -1,5 +1,6 @@
 #include <arm_neon.h>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -138,6 +139,23 @@ void print_csv_result(const BenchmarkResult& result) {
     std::cout << std::endl;
 }
 
+std::vector<size_t> generate_log_sizes() {
+    std::vector<size_t> sizes;
+    size_t last = 0;
+
+    for (int step = 0; step <= 40; step++) {
+        double exponent = 2.0 + static_cast<double>(step) / 10.0;
+        size_t value = static_cast<size_t>(std::llround(std::pow(10.0, exponent)));
+
+        if (value > last) {
+            sizes.push_back(value);
+            last = value;
+        }
+    }
+
+    return sizes;
+}
+
 int main(int argc, char* argv[]) {
     std::srand(static_cast<unsigned>(std::time(nullptr)));
 
@@ -149,25 +167,8 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    const size_t sizes[] = {
-        100,
-        200,
-        500,
-        1000,
-        2000,
-        5000,
-        10000,
-        20000,
-        50000,
-        100000,
-        200000,
-        350000,
-        500000,
-        750000,
-        1000000
-    };
-
-    const int tests = sizeof(sizes) / sizeof(sizes[0]);
+    const std::vector<size_t> sizes = generate_log_sizes();
+    const int tests = static_cast<int>(sizes.size());
 
     if (csv_mode) {
         print_csv_header();
