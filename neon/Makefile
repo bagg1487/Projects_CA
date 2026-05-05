@@ -8,7 +8,7 @@ IMPLOT_DIR = ./implot
 BACKENDS_DIR = $(IMGUI_DIR)/backends
 
 SRCS = gui.cpp \
-       neon.cpp \
+       neon_test.cpp \
        $(IMGUI_DIR)/imgui.cpp \
        $(IMGUI_DIR)/imgui_draw.cpp \
        $(IMGUI_DIR)/imgui_tables.cpp \

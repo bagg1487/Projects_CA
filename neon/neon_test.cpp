@@ -1,7 +1,8 @@
-#include "neon.h"
+#include "neon_test.hpp"
 #include <arm_neon.h>
 #include <chrono>
 #include <numeric>
+#include <vector>
 
 int64_t process_array_scalar(const int32_t* data, size_t n) {
     int64_t sum = 0;
@@ -45,19 +46,26 @@ void run_benchmarks(BenchData& res) {
     res.sizes.clear();
     res.scalar_times.clear();
     res.neon_times.clear();
+    res.speedups.clear();
+
     for (int n = 1024; n <= 1024 * 1024; n *= 2) {
         std::vector<int32_t> data(n);
         std::iota(data.begin(), data.end(), -n/2);
-        res.sizes.push_back((double)n);
+
+        res.sizes.push_back(n);
 
         auto t0 = std::chrono::high_resolution_clock::now();
         for(int k=0; k<100; k++) process_array_scalar(data.data(), n);
         auto t1 = std::chrono::high_resolution_clock::now();
-        res.scalar_times.push_back(std::chrono::duration<double, std::micro>(t1-t0).count()/100.0);
+        double scalar = std::chrono::duration<double, std::micro>(t1-t0).count()/100.0;
+        res.scalar_times.push_back(scalar);
 
         t0 = std::chrono::high_resolution_clock::now();
         for(int k=0; k<100; k++) process_array_neon(data.data(), n);
         t1 = std::chrono::high_resolution_clock::now();
-        res.neon_times.push_back(std::chrono::duration<double, std::micro>(t1-t0).count()/100.0);
+        double neon = std::chrono::duration<double, std::micro>(t1-t0).count()/100.0;
+        res.neon_times.push_back(neon);
+
+        res.speedups.push_back(scalar / neon);
     }
 }
