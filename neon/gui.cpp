@@ -7,11 +7,11 @@
 
 int main() {
     if (!glfwInit()) return 1;
+
     GLFWwindow* window = glfwCreateWindow(1280, 720, "NEON Benchmark", NULL, NULL);
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1);
 
-    IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImPlot::CreateContext();
 
@@ -23,38 +23,42 @@ int main() {
 
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
+
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
         ImGui::Begin("NEON Benchmark");
 
-        if (ImGui::Button("Run Benchmark")) {
+        if (ImGui::Button("Re-run benchmark")) {
             run_benchmarks(data);
         }
 
-        if (ImPlot::BeginPlot("Execution Time", ImVec2(-1, 400))) {
-            ImPlot::SetupAxes("Array Size", "Time (us)");
+        if (ImPlot::BeginPlot("Execution Time", ImVec2(-1, 450))) {
+
+            ImPlot::SetupAxes("Size", "Time (us)");
             ImPlot::SetupAxisScale(ImAxis_X1, ImPlotScale_Log10);
             ImPlot::SetupAxisScale(ImAxis_Y1, ImPlotScale_Log10);
 
-            ImPlot::PushStyleVar(ImPlotStyleVar_Marker, ImPlotMarker_Circle);
-            ImPlot::PushStyleVar(ImPlotStyleVar_MarkerSize, 4);
-            ImPlot::PlotLine("Scalar", data.sizes.data(), data.scalar_times.data(), data.sizes.size());
-            ImPlot::PopStyleVar(2);
+            ImPlot::PushStyleVar(ImPlotStyleVar_MarkerSize, 6);
 
-            ImPlot::PushStyleVar(ImPlotStyleVar_Marker, ImPlotMarker_Square);
-            ImPlot::PushStyleVar(ImPlotStyleVar_MarkerSize, 4);
+            ImPlot::SetNextMarkerStyle(ImPlotMarker_Circle);
+            ImPlot::PlotLine("Scalar", data.sizes.data(), data.scalar_times.data(), data.sizes.size());
+            ImPlot::PlotScatter("Scalar points", data.sizes.data(), data.scalar_times.data(), data.sizes.size());
+
+            ImPlot::SetNextMarkerStyle(ImPlotMarker_Square);
             ImPlot::PlotLine("NEON", data.sizes.data(), data.neon_times.data(), data.sizes.size());
-            ImPlot::PopStyleVar(2);
+            ImPlot::PlotScatter("NEON points", data.sizes.data(), data.neon_times.data(), data.neon_times.size());
+
+            ImPlot::PopStyleVar();
 
             ImPlot::EndPlot();
         }
 
         if (ImGui::BeginTable("Results", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
             ImGui::TableSetupColumn("Size");
-            ImGui::TableSetupColumn("Scalar (us)");
-            ImGui::TableSetupColumn("NEON (us)");
+            ImGui::TableSetupColumn("Scalar");
+            ImGui::TableSetupColumn("NEON");
             ImGui::TableSetupColumn("Diff");
             ImGui::TableSetupColumn("Speedup");
             ImGui::TableHeadersRow();
@@ -77,12 +81,14 @@ int main() {
                 ImGui::TableSetColumnIndex(4);
                 ImGui::Text("%.2f", data.speedups[i]);
             }
+
             ImGui::EndTable();
         }
 
         ImGui::End();
 
         ImGui::Render();
+
         int w, h;
         glfwGetFramebufferSize(window, &w, &h);
         glViewport(0, 0, w, h);
@@ -97,6 +103,7 @@ int main() {
     ImGui_ImplGlfw_Shutdown();
     ImPlot::DestroyContext();
     ImGui::DestroyContext();
+
     glfwDestroyWindow(window);
     glfwTerminate();
     return 0;
