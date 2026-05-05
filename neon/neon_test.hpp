@@ -11,6 +11,7 @@ struct BenchData {
     std::vector<double> scalar_times;
     std::vector<double> neon_times;
     std::vector<double> speedups;
+    std::vector<double> diff;
 };
 
 void run_benchmarks(BenchData& data);

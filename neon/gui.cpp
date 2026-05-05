@@ -33,31 +33,27 @@ int main() {
             run_benchmarks(data);
         }
 
-        if (ImPlot::BeginPlot("Execution Time")) {
+        if (ImPlot::BeginPlot("Execution Time", ImVec2(-1, 400))) {
             ImPlot::SetupAxes("Array Size", "Time (us)");
             ImPlot::SetupAxisScale(ImAxis_X1, ImPlotScale_Log10);
             ImPlot::SetupAxisScale(ImAxis_Y1, ImPlotScale_Log10);
 
+            ImPlot::SetNextMarkerStyle(ImPlotMarker_Circle, 4);
             ImPlot::PlotLine("Scalar", data.sizes.data(), data.scalar_times.data(), data.sizes.size());
+            ImPlot::PlotScatter("Scalar points", data.sizes.data(), data.scalar_times.data(), data.sizes.size());
+
+            ImPlot::SetNextMarkerStyle(ImPlotMarker_Square, 4);
             ImPlot::PlotLine("NEON", data.sizes.data(), data.neon_times.data(), data.sizes.size());
+            ImPlot::PlotScatter("NEON points", data.sizes.data(), data.neon_times.data(), data.sizes.size());
 
             ImPlot::EndPlot();
         }
 
-        if (ImPlot::BeginPlot("Speedup")) {
-            ImPlot::SetupAxes("Array Size", "Speedup");
-            ImPlot::SetupAxisScale(ImAxis_X1, ImPlotScale_Log10);
-            ImPlot::SetupAxisScale(ImAxis_Y1, ImPlotScale_Log10);
-
-            ImPlot::PlotLine("Speedup", data.sizes.data(), data.speedups.data(), data.sizes.size());
-
-            ImPlot::EndPlot();
-        }
-
-        if (ImGui::BeginTable("Results", 4)) {
+        if (ImGui::BeginTable("Results", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
             ImGui::TableSetupColumn("Size");
             ImGui::TableSetupColumn("Scalar (us)");
             ImGui::TableSetupColumn("NEON (us)");
+            ImGui::TableSetupColumn("Diff");
             ImGui::TableSetupColumn("Speedup");
             ImGui::TableHeadersRow();
 
@@ -74,6 +70,9 @@ int main() {
                 ImGui::Text("%.2f", data.neon_times[i]);
 
                 ImGui::TableSetColumnIndex(3);
+                ImGui::Text("%.2f", data.diff[i]);
+
+                ImGui::TableSetColumnIndex(4);
                 ImGui::Text("%.2f", data.speedups[i]);
             }
             ImGui::EndTable();
