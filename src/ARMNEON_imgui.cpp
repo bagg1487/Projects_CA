@@ -1,6 +1,5 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_opengl.h>
-
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -12,13 +11,12 @@
 #include <string>
 #include <sys/wait.h>
 #include <vector>
-
 #include "imgui.h"
 #include "backends/imgui_impl_opengl3.h"
 #include "backends/imgui_impl_sdl2.h"
 
 #ifndef ARMNEON_BENCHMARK_SOURCE_PATH
-#define ARMNEON_BENCHMARK_SOURCE_PATH "ARMNEON.cpp"
+#define ARMNEON_BENCHMARK_SOURCE_PATH "src/ARMNEON.cpp"
 #endif
 
 #if defined(__aarch64__)
@@ -28,13 +26,11 @@ constexpr const char* kBuildCommandPrefix = "g++ -O2 -std=c++17 ";
 #elif defined(__arm__)
 constexpr bool kNativeArmHost = true;
 constexpr const char* kBenchmarkBinaryPath = "/tmp/armneon_runtime_native";
-constexpr const char* kBuildCommandPrefix =
-    "g++ -O2 -std=c++17 -mfpu=neon -mfloat-abi=hard -march=armv7-a ";
+constexpr const char* kBuildCommandPrefix = "g++ -O2 -std=c++17 -mfpu=neon -mfloat-abi=hard -march=armv7-a ";
 #else
 constexpr bool kNativeArmHost = false;
 constexpr const char* kBenchmarkBinaryPath = "/tmp/armneon_runtime_arm";
-constexpr const char* kBuildCommandPrefix =
-    "arm-linux-gnueabihf-g++ -O2 -std=c++17 -mfpu=neon -mfloat-abi=hard -march=armv7-a ";
+constexpr const char* kBuildCommandPrefix = "arm-linux-gnueabihf-g++ -O2 -std=c++17 -mfpu=neon -mfloat-abi=hard -march=armv7-a ";
 #endif
 
 struct BenchmarkPoint {
@@ -49,515 +45,261 @@ struct BenchmarkPoint {
 
 struct AppState {
     std::vector<BenchmarkPoint> points;
-    std::string status = "Ready to run";
+    std::string status = "Ready";
     std::string raw_output;
     std::string arm_binary_path = kBenchmarkBinaryPath;
     bool auto_run_done = false;
 };
 
-std::string shell_quote(const std::string& value) {
-    return "\"" + value + "\"";
+std::string shell_quote(const std::string& v) {
+    return "\"" + v + "\"";
 }
 
-std::string make_build_command(const AppState& state) {
+std::string make_build_command(const AppState& s) {
     return std::string(kBuildCommandPrefix) + shell_quote(ARMNEON_BENCHMARK_SOURCE_PATH) +
-           " -o " + shell_quote(state.arm_binary_path);
+           " -o " + shell_quote(s.arm_binary_path);
 }
 
-std::string make_run_command(const AppState& state) {
-    if (kNativeArmHost) {
-        return shell_quote(state.arm_binary_path) + " --csv";
-    }
-
-    return "qemu-arm -L /usr/arm-linux-gnueabihf " + shell_quote(state.arm_binary_path) +
-           " --csv";
+std::string make_run_command(const AppState& s) {
+    if (kNativeArmHost) return shell_quote(s.arm_binary_path) + " --csv";
+    return "qemu-arm -L /usr/arm-linux-gnueabihf " + shell_quote(s.arm_binary_path) + " --csv";
 }
 
-std::string trim(const std::string& value) {
-    size_t first = 0;
-    while (first < value.size() && std::isspace(static_cast<unsigned char>(value[first]))) {
-        ++first;
-    }
-
-    size_t last = value.size();
-    while (last > first && std::isspace(static_cast<unsigned char>(value[last - 1]))) {
-        --last;
-    }
-
-    return value.substr(first, last - first);
+std::string trim(const std::string& v) {
+    size_t i = 0;
+    while (i < v.size() && std::isspace((unsigned char)v[i])) i++;
+    size_t j = v.size();
+    while (j > i && std::isspace((unsigned char)v[j - 1])) j--;
+    return v.substr(i, j - i);
 }
 
-std::vector<std::string> split_csv(const std::string& line) {
-    std::vector<std::string> parts;
-    std::stringstream stream(line);
-    std::string item;
-
-    while (std::getline(stream, item, ',')) {
-        parts.push_back(trim(item));
-    }
-
-    return parts;
+std::vector<std::string> split_csv(const std::string& l) {
+    std::vector<std::string> p;
+    std::stringstream ss(l);
+    std::string x;
+    while (std::getline(ss, x, ',')) p.push_back(trim(x));
+    return p;
 }
 
-std::string run_command_capture(const std::string& command, int& exit_code) {
-    std::string output;
-    std::array<char, 4096> buffer{};
-    std::string full_command = command + " 2>&1";
-
-    FILE* pipe = popen(full_command.c_str(), "r");
-    if (pipe == nullptr) {
-        exit_code = -1;
-        return "Failed to start command.";
+std::string run_command_capture(const std::string& cmd, int& code) {
+    std::string out;
+    std::array<char, 16384> buf{};
+    std::string full = cmd + " 2>&1";
+    FILE* pipe = popen(full.c_str(), "r");
+    if (!pipe) {
+        code = -1;
+        return "popen failed";
     }
-
-    while (std::fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr) {
-        output += buffer.data();
-    }
-
+    while (fgets(buf.data(), (int)buf.size(), pipe)) out += buf.data();
     int status = pclose(pipe);
-    if (WIFEXITED(status)) {
-        exit_code = WEXITSTATUS(status);
-    } else {
-        exit_code = status;
-    }
-
-    return output;
+    code = WIFEXITED(status) ? WEXITSTATUS(status) : status;
+    return out;
 }
 
-bool parse_benchmark_csv(const std::string& output, std::vector<BenchmarkPoint>& points) {
-    points.clear();
-
-    std::stringstream stream(output);
+bool parse_benchmark_csv(const std::string& out, std::vector<BenchmarkPoint>& pts) {
+    pts.clear();
+    std::stringstream ss(out);
     std::string line;
-
-    while (std::getline(stream, line)) {
+    while (std::getline(ss, line)) {
         line = trim(line);
-        if (line.empty() || line.rfind("size,", 0) == 0) {
-            continue;
-        }
-
-        std::vector<std::string> cells = split_csv(line);
-        if (cells.size() != 7) {
-            continue;
-        }
-
-        BenchmarkPoint point;
-        point.size = static_cast<size_t>(std::stoull(cells[0]));
-        point.scalar_sum = std::stoll(cells[1]);
-        point.neon_sum = std::stoll(cells[2]);
-        point.ok = (cells[3] == "OK");
-        point.scalar_time_ms = std::stod(cells[4]);
-        point.neon_time_ms = std::stod(cells[5]);
-        point.speedup = std::stod(cells[6]);
-
-        points.push_back(point);
+        if (line.empty() || !std::isdigit((unsigned char)line[0])) continue;
+        auto c = split_csv(line);
+        if (c.size() < 7) continue;
+        try {
+            BenchmarkPoint p;
+            p.size = std::stoull(c[0]);
+            p.scalar_sum = std::stoll(c[1]);
+            p.neon_sum = std::stoll(c[2]);
+            p.ok = (c[3] == "OK");
+            p.scalar_time_ms = std::stod(c[4]);
+            p.neon_time_ms = std::stod(c[5]);
+            p.speedup = std::stod(c[6]);
+            pts.push_back(p);
+        } catch (...) { continue; }
     }
-
-    std::sort(points.begin(), points.end(),
-              [](const BenchmarkPoint& left, const BenchmarkPoint& right) {
-                  return left.size < right.size;
-              });
-
-    return !points.empty();
+    std::sort(pts.begin(), pts.end(), [](const auto& a, const auto& b) { return a.size < b.size; });
+    return !pts.empty();
 }
 
-double choose_rounded_axis_max(double value) {
-    if (value <= 0.0) {
-        return 1.0;
-    }
-
-    const double magnitude = std::pow(10.0, std::floor(std::log10(value)));
-    const double normalized = value / magnitude;
-
-    double rounded = 1.0;
-    if (normalized <= 1.0) {
-        rounded = 1.0;
-    } else if (normalized <= 2.0) {
-        rounded = 2.0;
-    } else if (normalized <= 5.0) {
-        rounded = 5.0;
-    } else {
-        rounded = 10.0;
-    }
-
-    return rounded * magnitude;
+double choose_rounded_axis_max(double v) {
+    if (v <= 0) return 1.0;
+    double m = std::pow(10, std::floor(std::log10(v)));
+    double n = v / m;
+    double r = (n <= 1) ? 1 : (n <= 2) ? 2 : (n <= 5) ? 5 : 10;
+    return r * m;
 }
 
-void run_benchmark(AppState& state) {
-    int exit_code = 0;
-    state.raw_output = run_command_capture(make_run_command(state), exit_code);
-
-    if (exit_code != 0) {
-        state.status = "Run failed with exit code " + std::to_string(exit_code);
+void run_benchmark(AppState& s) {
+    int code = 0;
+    s.raw_output = run_command_capture(make_run_command(s), code);
+    if (code != 0) {
+        s.status = "Run failed";
         return;
     }
-
-    if (parse_benchmark_csv(state.raw_output, state.points)) {
-        state.status = "Benchmark finished successfully";
-    } else {
-        state.status = "CSV parse failed. Check command output below.";
-    }
+    if (parse_benchmark_csv(s.raw_output, s.points)) s.status = "OK";
+    else s.status = "Parse failed";
 }
 
-void build_arm_binary(AppState& state) {
-    int exit_code = 0;
-    state.raw_output = run_command_capture(make_build_command(state), exit_code);
-
-    if (exit_code == 0) {
-        state.status = "ARM binary rebuilt successfully";
-    } else {
-        state.status = "Build failed with exit code " + std::to_string(exit_code);
-    }
+void build_arm_binary(AppState& s) {
+    int code = 0;
+    s.raw_output = run_command_capture(make_build_command(s), code);
+    if (code == 0) s.status = "Built";
+    else s.status = "Build failed";
 }
 
-void build_and_run(AppState& state) {
-    build_arm_binary(state);
-    if (state.status == "ARM binary rebuilt successfully") {
-        run_benchmark(state);
-    }
+void build_and_run(AppState& s) {
+    build_arm_binary(s);
+    if (s.status == "Built") run_benchmark(s);
 }
 
 void draw_timing_chart(const std::vector<BenchmarkPoint>& points) {
-    ImVec2 canvas_size(ImGui::GetContentRegionAvail().x, 320.0f);
-    if (canvas_size.x < 200.0f) {
-        canvas_size.x = 200.0f;
-    }
+    ImVec2 size(ImGui::GetContentRegionAvail().x, 400);
+    ImVec2 pos = ImGui::GetCursorScreenPos();
+    ImGui::InvisibleButton("chart", size);
+    auto* dl = ImGui::GetWindowDrawList();
 
-    ImVec2 canvas_pos = ImGui::GetCursorScreenPos();
-    ImGui::InvisibleButton("timing_chart", canvas_size);
+    dl->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), IM_COL32(25, 25, 25, 255));
 
-    ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    const ImU32 background = IM_COL32(17, 24, 39, 255);
-    const ImU32 frame = IM_COL32(82, 103, 129, 255);
-    const ImU32 grid = IM_COL32(56, 72, 92, 255);
-    const ImU32 text = IM_COL32(216, 225, 236, 255);
-    const ImU32 scalar_color = IM_COL32(243, 122, 55, 255);
-    const ImU32 neon_color = IM_COL32(48, 194, 102, 255);
+    float pad_l = 80, pad_r = 40, pad_t = 40, pad_b = 60;
+    ImVec2 o(pos.x + pad_l, pos.y + size.y - pad_b);
+    ImVec2 tr(pos.x + size.x - pad_r, pos.y + pad_t);
 
-    draw_list->AddRectFilled(
-        canvas_pos, ImVec2(canvas_pos.x + canvas_size.x, canvas_pos.y + canvas_size.y),
-        background, 6.0f);
-    draw_list->AddRect(
-        canvas_pos, ImVec2(canvas_pos.x + canvas_size.x, canvas_pos.y + canvas_size.y), frame,
-        6.0f, 0, 1.5f);
+    dl->AddLine(ImVec2(o.x, tr.y), o, IM_COL32_WHITE, 2.0f); 
+    dl->AddLine(o, ImVec2(tr.x, o.y), IM_COL32_WHITE, 2.0f); 
+
+    dl->AddText(ImVec2(pos.x + 10, tr.y - 25), IM_COL32(180, 180, 180, 255), "Time (ms)");
 
     if (points.empty()) {
-        draw_list->AddText(ImVec2(canvas_pos.x + 20.0f, canvas_pos.y + 20.0f), text,
-                           "No benchmark data yet.");
-        draw_list->AddText(ImVec2(canvas_pos.x + 20.0f, canvas_pos.y + 44.0f), text,
-                           "X: array size");
-        draw_list->AddText(ImVec2(canvas_pos.x + 20.0f, canvas_pos.y + 64.0f), text,
-                           "Y: time (ms)");
+        dl->AddText(ImVec2(o.x + 20, o.y - 30), IM_COL32_WHITE, "No data available");
         return;
     }
 
-    const float padding_left = 70.0f;
-    const float padding_right = 24.0f;
-    const float padding_top = 24.0f;
-    const float padding_bottom = 52.0f;
-    const ImVec2 origin(canvas_pos.x + padding_left,
-                        canvas_pos.y + canvas_size.y - padding_bottom);
-    const ImVec2 top_right(canvas_pos.x + canvas_size.x - padding_right,
-                           canvas_pos.y + padding_top);
-    const float plot_width = top_right.x - origin.x;
-    const float plot_height = origin.y - top_right.y;
+    float w = tr.x - o.x;
+    float h = o.y - tr.y;
 
-    const double min_log_x = std::log10(static_cast<double>(points.front().size));
-    const double max_log_x = std::log10(static_cast<double>(points.back().size));
-    const double log_range = std::max(0.001, max_log_x - min_log_x);
+    double minx = std::log10((double)points.front().size);
+    double maxx = std::log10((double)points.back().size);
+    double xr = std::max(0.1, maxx - minx);
 
-    double max_y_seconds = 0.0;
-    for (const BenchmarkPoint& point : points) {
-        max_y_seconds = std::max(
-            max_y_seconds,
-            std::max(point.scalar_time_ms, point.neon_time_ms) / 1000.0);
-    }
-    max_y_seconds = choose_rounded_axis_max(std::max(0.001, max_y_seconds * 1.15));
+    double maxy = 0;
+    for (auto& p : points) maxy = std::max({maxy, p.scalar_time_ms, p.neon_time_ms});
+    maxy = choose_rounded_axis_max(maxy);
 
-    for (int tick = 0; tick <= 5; ++tick) {
-        const float t = static_cast<float>(tick) / 5.0f;
-        const float y = origin.y - t * plot_height;
-        draw_list->AddLine(ImVec2(origin.x, y), ImVec2(top_right.x, y), grid, 1.0f);
-
-        char label[32];
-        std::snprintf(label, sizeof(label), "%.4f", max_y_seconds * t);
-        draw_list->AddText(ImVec2(canvas_pos.x + 14.0f, y - 8.0f), text, label);
+   
+    const int y_ticks = 5;
+    for (int i = 0; i <= y_ticks; i++) {
+        float ratio = (float)i / y_ticks;
+        float ty = o.y - ratio * h;
+        dl->AddLine(ImVec2(o.x - 5, ty), ImVec2(o.x, ty), IM_COL32_WHITE);
+        dl->AddLine(ImVec2(o.x, ty), ImVec2(tr.x, ty), IM_COL32(255, 255, 255, 30));
+        
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%.2f", ratio * maxy);
+        dl->AddText(ImVec2(pos.x + 15, ty - 7), IM_COL32_WHITE, buf);
     }
 
-    draw_list->AddLine(origin, ImVec2(top_right.x, origin.y), frame, 2.0f);
-    draw_list->AddLine(origin, ImVec2(origin.x, top_right.y), frame, 2.0f);
+    const int x_ticks = (int)std::floor(maxx) - (int)std::ceil(minx) + 1;
+    for (int i = 0; i <= x_ticks; i++) {
+        double log_val = std::ceil(minx) + i;
+        if (log_val > maxx) break;
 
-    const struct {
-        int exponent;
-        const char* label;
-    } x_ticks[] = {
-        {2, "100"},
-        {3, "1K"},
-        {4, "10K"},
-        {5, "100K"},
-        {6, "1M"},
-    };
+        float ratio = (float)((log_val - minx) / xr);
+        float tx = o.x + ratio * w;
+        
+        dl->AddLine(ImVec2(tx, o.y), ImVec2(tx, o.y + 5), IM_COL32_WHITE);
+        dl->AddLine(ImVec2(tx, o.y), ImVec2(tx, tr.y), IM_COL32(255, 255, 255, 30));
 
-    for (const auto& tick : x_ticks) {
-        const float x =
-            origin.x + static_cast<float>((tick.exponent - min_log_x) / log_range) * plot_width;
-
-        if (x >= origin.x && x <= top_right.x) {
-            draw_list->AddLine(ImVec2(x, origin.y), ImVec2(x, top_right.y), grid, 1.0f);
-            draw_list->AddLine(ImVec2(x, origin.y), ImVec2(x, origin.y + 6.0f), frame, 1.0f);
-            draw_list->AddText(ImVec2(x - 14.0f, origin.y + 12.0f), text, tick.label);
-        }
+        char buf[32];
+        int val = (int)std::pow(10, log_val);
+        if (val >= 1000000) snprintf(buf, sizeof(buf), "%dM", val / 1000000);
+        else if (val >= 1000) snprintf(buf, sizeof(buf), "%dk", val / 1000);
+        else snprintf(buf, sizeof(buf), "%d", val);
+        
+        dl->AddText(ImVec2(tx - 10, o.y + 10), IM_COL32_WHITE, buf);
     }
 
-    std::vector<ImVec2> scalar_line;
-    std::vector<ImVec2> neon_line;
-    scalar_line.reserve(points.size());
-    neon_line.reserve(points.size());
+    dl->AddText(ImVec2(tr.x - 60, o.y + 35), IM_COL32(180, 180, 180, 255), "Size (elements)");
 
-    for (const BenchmarkPoint& point : points) {
-        const double log_x = std::log10(static_cast<double>(point.size));
-        const float x =
-            origin.x + static_cast<float>((log_x - min_log_x) / log_range) * plot_width;
-        const float scalar_y =
-            origin.y -
-            static_cast<float>((point.scalar_time_ms / 1000.0) / max_y_seconds) * plot_height;
-        const float neon_y =
-            origin.y -
-            static_cast<float>((point.neon_time_ms / 1000.0) / max_y_seconds) * plot_height;
+    std::vector<ImVec2> a, b;
+    for (auto& p : points) {
+        float x = o.x + (float)((std::log10((double)p.size) - minx) / xr * w);
+        float y1 = o.y - (float)(p.scalar_time_ms / maxy * h);
+        float y2 = o.y - (float)(p.neon_time_ms / maxy * h);
+        
+        a.push_back({x, y1});
+        b.push_back({x, y2});
 
-        scalar_line.push_back(ImVec2(x, scalar_y));
-        neon_line.push_back(ImVec2(x, neon_y));
+        dl->AddCircleFilled({x, y1}, 3.0f, IM_COL32(200, 200, 200, 255));
+        dl->AddCircleFilled({x, y2}, 3.0f, IM_COL32(100, 200, 255, 255));
     }
 
-    if (scalar_line.size() >= 2) {
-        draw_list->AddPolyline(scalar_line.data(), static_cast<int>(scalar_line.size()),
-                               scalar_color, 0, 2.5f);
-        draw_list->AddPolyline(neon_line.data(), static_cast<int>(neon_line.size()), neon_color,
-                               0, 2.5f);
+    if (a.size() > 1) {
+        dl->AddPolyline(a.data(), (int)a.size(), IM_COL32(200, 200, 200, 150), 0, 2.0f);
+        dl->AddPolyline(b.data(), (int)b.size(), IM_COL32(100, 200, 255, 255), 0, 2.0f);
     }
 
-    float best_distance = std::numeric_limits<float>::max();
-    int hovered_index = -1;
-    bool hovered_scalar = true;
-    const ImVec2 mouse = ImGui::GetIO().MousePos;
-
-    for (size_t i = 0; i < scalar_line.size(); ++i) {
-        draw_list->AddCircleFilled(scalar_line[i], 4.0f, scalar_color);
-        draw_list->AddCircleFilled(neon_line[i], 4.0f, neon_color);
-
-        const float scalar_distance =
-            std::sqrt((mouse.x - scalar_line[i].x) * (mouse.x - scalar_line[i].x) +
-                      (mouse.y - scalar_line[i].y) * (mouse.y - scalar_line[i].y));
-        const float neon_distance =
-            std::sqrt((mouse.x - neon_line[i].x) * (mouse.x - neon_line[i].x) +
-                      (mouse.y - neon_line[i].y) * (mouse.y - neon_line[i].y));
-
-        if (scalar_distance < best_distance) {
-            best_distance = scalar_distance;
-            hovered_index = static_cast<int>(i);
-            hovered_scalar = true;
-        }
-        if (neon_distance < best_distance) {
-            best_distance = neon_distance;
-            hovered_index = static_cast<int>(i);
-            hovered_scalar = false;
-        }
-    }
-
-    draw_list->AddText(ImVec2(origin.x - 70.0f, top_right.y - 18.0f), text, "Y: time (s)");
-    draw_list->AddText(ImVec2(origin.x, canvas_pos.y + 8.0f), scalar_color, "Scalar");
-    draw_list->AddText(ImVec2(origin.x + 80.0f, canvas_pos.y + 8.0f), neon_color, "NEON");
-    draw_list->AddText(ImVec2(origin.x + plot_width * 0.5f - 44.0f, origin.y + 28.0f), text,
-                       "X: log10(array size)");
-
-    if (hovered_index >= 0 && best_distance <= 12.0f) {
-        const BenchmarkPoint& point = points[hovered_index];
-        ImGui::BeginTooltip();
-        ImGui::Text("Size: %zu", point.size);
-        ImGui::Text("Scalar: %.6f s", point.scalar_time_ms / 1000.0);
-        ImGui::Text("NEON: %.6f s", point.neon_time_ms / 1000.0);
-        ImGui::Text("Focus: %s", hovered_scalar ? "Scalar" : "NEON");
-        ImGui::Text("Speedup: %.3fx", point.speedup);
-        ImGui::EndTooltip();
-    }
+    dl->AddRectFilled(ImVec2(tr.x - 110, tr.y), ImVec2(tr.x, tr.y + 45), IM_COL32(0, 0, 0, 150));
+    dl->AddText(ImVec2(tr.x - 100, tr.y + 5), IM_COL32(200, 200, 200, 255), "Scalar");
+    dl->AddText(ImVec2(tr.x - 100, tr.y + 25), IM_COL32(100, 200, 255, 255), "NEON");
 }
-
-void draw_results_table(const std::vector<BenchmarkPoint>& points) {
-    if (ImGui::BeginTable("results_table", 7,
-                          ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
-                              ImGuiTableFlags_SizingStretchProp |
-                              ImGuiTableFlags_ScrollY)) {
+void draw_results_table(const std::vector<BenchmarkPoint>& p) {
+    if (ImGui::BeginTable("t", 4, ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders)) {
         ImGui::TableSetupColumn("Size");
-        ImGui::TableSetupColumn("Scalar sum");
-        ImGui::TableSetupColumn("NEON sum");
-        ImGui::TableSetupColumn("Scalar ms");
-        ImGui::TableSetupColumn("NEON ms");
-        ImGui::TableSetupColumn("Speedup");
-        ImGui::TableSetupColumn("Result");
+        ImGui::TableSetupColumn("ms S");
+        ImGui::TableSetupColumn("ms N");
+        ImGui::TableSetupColumn("X");
         ImGui::TableHeadersRow();
-
-        for (const BenchmarkPoint& point : points) {
+        for (auto& r : p) {
             ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(0);
-            ImGui::Text("%zu", point.size);
-            ImGui::TableSetColumnIndex(1);
-            ImGui::Text("%lld", point.scalar_sum);
-            ImGui::TableSetColumnIndex(2);
-            ImGui::Text("%lld", point.neon_sum);
-            ImGui::TableSetColumnIndex(3);
-            ImGui::Text("%.6f", point.scalar_time_ms);
-            ImGui::TableSetColumnIndex(4);
-            ImGui::Text("%.6f", point.neon_time_ms);
-            ImGui::TableSetColumnIndex(5);
-            ImGui::Text("%.3fx", point.speedup);
-            ImGui::TableSetColumnIndex(6);
-            ImGui::TextColored(point.ok ? ImVec4(0.34f, 0.85f, 0.46f, 1.0f)
-                                        : ImVec4(0.92f, 0.33f, 0.28f, 1.0f),
-                               "%s", point.ok ? "OK" : "ERROR");
+            ImGui::TableSetColumnIndex(0); ImGui::Text("%zu", r.size);
+            ImGui::TableSetColumnIndex(1); ImGui::Text("%.3f", r.scalar_time_ms);
+            ImGui::TableSetColumnIndex(2); ImGui::Text("%.3f", r.neon_time_ms);
+            ImGui::TableSetColumnIndex(3); ImGui::Text("%.2fx", r.speedup);
         }
-
         ImGui::EndTable();
     }
 }
 
-void apply_style() {
-    ImGuiStyle& style = ImGui::GetStyle();
-    style.WindowRounding = 10.0f;
-    style.FrameRounding = 6.0f;
-    style.GrabRounding = 6.0f;
-    style.TabRounding = 6.0f;
-    style.FramePadding = ImVec2(10.0f, 7.0f);
-    style.ItemSpacing = ImVec2(10.0f, 10.0f);
-    style.WindowPadding = ImVec2(16.0f, 16.0f);
-
-    ImVec4* colors = style.Colors;
-    colors[ImGuiCol_WindowBg] = ImVec4(0.09f, 0.10f, 0.12f, 1.0f);
-    colors[ImGuiCol_ChildBg] = ImVec4(0.11f, 0.13f, 0.16f, 1.0f);
-    colors[ImGuiCol_Header] = ImVec4(0.19f, 0.23f, 0.28f, 1.0f);
-    colors[ImGuiCol_HeaderHovered] = ImVec4(0.24f, 0.29f, 0.35f, 1.0f);
-    colors[ImGuiCol_Button] = ImVec4(0.11f, 0.45f, 0.72f, 1.0f);
-    colors[ImGuiCol_ButtonHovered] = ImVec4(0.18f, 0.55f, 0.84f, 1.0f);
-    colors[ImGuiCol_ButtonActive] = ImVec4(0.09f, 0.39f, 0.64f, 1.0f);
-    colors[ImGuiCol_FrameBg] = ImVec4(0.15f, 0.17f, 0.21f, 1.0f);
-    colors[ImGuiCol_Border] = ImVec4(0.28f, 0.32f, 0.37f, 0.8f);
-    colors[ImGuiCol_TitleBg] = ImVec4(0.09f, 0.10f, 0.12f, 1.0f);
-    colors[ImGuiCol_TitleBgActive] = ImVec4(0.09f, 0.10f, 0.12f, 1.0f);
-    colors[ImGuiCol_TableRowBgAlt] = ImVec4(0.12f, 0.14f, 0.17f, 0.8f);
-}
-
 int main() {
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER) != 0) {
-        std::fprintf(stderr, "SDL init failed: %s\n", SDL_GetError());
-        return 1;
-    }
-
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
-    SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-
-    SDL_Window* window = SDL_CreateWindow(
-        "ARM NEON Benchmark Viewer",
-        SDL_WINDOWPOS_CENTERED,
-        SDL_WINDOWPOS_CENTERED,
-        1280,
-        900,
-        SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
-    if (window == nullptr) {
-        std::fprintf(stderr, "Window creation failed: %s\n", SDL_GetError());
-        SDL_Quit();
-        return 1;
-    }
-
-    SDL_GLContext gl_context = SDL_GL_CreateContext(window);
-    if (gl_context == nullptr) {
-        std::fprintf(stderr, "OpenGL context failed: %s\n", SDL_GetError());
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-        return 1;
-    }
-
-    SDL_GL_MakeCurrent(window, gl_context);
-    SDL_GL_SetSwapInterval(1);
-
+    SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER);
+    SDL_Window* w = SDL_CreateWindow("NEON", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 900, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
+    SDL_GLContext gl = SDL_GL_CreateContext(w);
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-
-    apply_style();
-
-    ImGui_ImplSDL2_InitForOpenGL(window, gl_context);
+    ImGui_ImplSDL2_InitForOpenGL(w, gl);
     ImGui_ImplOpenGL3_Init("#version 150");
-
-    AppState state;
-    bool running = true;
-
-    while (running) {
-        SDL_Event event;
-        while (SDL_PollEvent(&event)) {
-            ImGui_ImplSDL2_ProcessEvent(&event);
-            if (event.type == SDL_QUIT) {
-                running = false;
-            }
-            if (event.type == SDL_WINDOWEVENT &&
-                event.window.event == SDL_WINDOWEVENT_CLOSE &&
-                event.window.windowID == SDL_GetWindowID(window)) {
-                running = false;
-            }
+    AppState s;
+    while (true) {
+        SDL_Event e;
+        while (SDL_PollEvent(&e)) {
+            ImGui_ImplSDL2_ProcessEvent(&e);
+            if (e.type == SDL_QUIT) return 0;
         }
-
+        if (!s.auto_run_done) {
+            build_and_run(s);
+            s.auto_run_done = true;
+        }
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplSDL2_NewFrame();
         ImGui::NewFrame();
-
-        if (!state.auto_run_done) {
-            build_and_run(state);
-            state.auto_run_done = true;
-        }
-
-        ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
-        ImGui::SetNextWindowSize(io.DisplaySize, ImGuiCond_Always);
-        ImGui::Begin("ARM NEON Benchmark Dashboard", nullptr,
-                     ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
-                         ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
-
-        ImGui::TextUnformatted("ARM NEON benchmark");
-        ImGui::Separator();
-
-        if (ImGui::Button("Repeat", ImVec2(120.0f, 0.0f))) {
-            run_benchmark(state);
-        }
-
-        ImGui::Text("Status: %s", state.status.c_str());
-        ImGui::Spacing();
-        ImGui::TextUnformatted("Timing chart");
-        draw_timing_chart(state.points);
-        ImGui::Spacing();
-        ImGui::TextUnformatted("Results");
-        ImGui::BeginChild("table_container", ImVec2(0.0f, 0.0f), true);
-        draw_results_table(state.points);
-        ImGui::EndChild();
-
+        ImGui::Begin("NEON Visualizer", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove);
+        ImGui::SetWindowSize(ImGui::GetIO().DisplaySize);
+        ImGui::SetWindowPos({0, 0});
+        ImGui::Columns(2);
+        ImGui::SetColumnWidth(0, ImGui::GetWindowWidth() * 0.7f);
+        draw_timing_chart(s.points);
+        ImGui::NextColumn();
+        draw_results_table(s.points);
+        ImGui::Columns(1);
+        if (ImGui::Button("Run Benchmark")) build_and_run(s);
+        ImGui::SameLine();
+        ImGui::Text("Status: %s", s.status.c_str());
         ImGui::End();
-
         ImGui::Render();
-        glViewport(0, 0, static_cast<int>(io.DisplaySize.x), static_cast<int>(io.DisplaySize.y));
-        glClearColor(0.05f, 0.07f, 0.10f, 1.0f);
+        glViewport(0, 0, (int)ImGui::GetIO().DisplaySize.x, (int)ImGui::GetIO().DisplaySize.y);
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-        SDL_GL_SwapWindow(window);
+        SDL_GL_SwapWindow(w);
     }
-
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplSDL2_Shutdown();
-    ImGui::DestroyContext();
-
-    SDL_GL_DeleteContext(gl_context);
-    SDL_DestroyWindow(window);
-    SDL_Quit();
     return 0;
 }
